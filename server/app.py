@@ -1,45 +1,53 @@
-from flask import Flask, request, jsonify
+from flask import Flask, send_from_directory, request, jsonify
 import requests
 import os
+
+# --------------------------------------------------
+# PATH CONFIGURATION
+# --------------------------------------------------
+
+# app.py is inside /server
+# BASE_DIR points to the project root
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+FRONTEND_DIR = BASE_DIR
+
+
+# --------------------------------------------------
+# FLASK APP
+# --------------------------------------------------
 
 app = Flask(__name__)
 
 
-# ============================================================
-# BULKSMSBD CONFIGURATION
-# ============================================================
-# These values are supplied by Render Environment Variables.
-#
-# Render:
-#   BULKSMS_API_KEY
-#   BULKSMS_SENDER_ID
-#   SOS_RECIPIENTS
-#
-# Do NOT put the actual API key directly in this file.
-# ============================================================
-
-API_URL = "http://bulksmsbd.net/api/smsapi"
-
-API_KEY = os.environ.get("BULKSMS_API_KEY")
-SENDER_ID = os.environ.get("BULKSMS_SENDER_ID")
-RECIPIENTS = os.environ.get("SOS_RECIPIENTS")
-
-
-# ============================================================
-# HOME
-# ============================================================
+# --------------------------------------------------
+# FRONTEND
+# --------------------------------------------------
 
 @app.route("/")
-def home():
-    return jsonify({
-        "status": "ok",
-        "service": "SOS Emergency Service"
-    })
+def index():
+    return send_from_directory(FRONTEND_DIR, "index.html")
 
 
-# ============================================================
+@app.route("/CSS/<path:filename>")
+def css_files(filename):
+    return send_from_directory(
+        os.path.join(FRONTEND_DIR, "CSS"),
+        filename
+    )
+
+
+@app.route("/JS/<path:filename>")
+def js_files(filename):
+    return send_from_directory(
+        os.path.join(FRONTEND_DIR, "JS"),
+        filename
+    )
+
+
+# --------------------------------------------------
 # HEALTH CHECK
-# ============================================================
+# --------------------------------------------------
 
 @app.route("/health")
 def health():
@@ -48,16 +56,23 @@ def health():
     })
 
 
-# ============================================================
+# --------------------------------------------------
+# SOS SMS CONFIGURATION
+# --------------------------------------------------
+
+API_URL = "http://bulksmsbd.net/api/smsapi"
+
+API_KEY = os.environ.get("BULKSMS_API_KEY")
+SENDER_ID = os.environ.get("BULKSMS_SENDER_ID")
+RECIPIENTS = os.environ.get("SOS_RECIPIENTS")
+
+
+# --------------------------------------------------
 # SEND SOS
-# ============================================================
+# --------------------------------------------------
 
 @app.route("/send-sos", methods=["POST"])
 def send_sos():
-
-    # --------------------------------------------------------
-    # Get JSON sent from sos.js
-    # --------------------------------------------------------
 
     data = request.get_json(silent=True) or {}
 
@@ -67,10 +82,9 @@ def send_sos():
     latitude = data.get("latitude")
     longitude = data.get("longitude")
 
-
-    # --------------------------------------------------------
-    # NAME IS REQUIRED
-    # --------------------------------------------------------
+    # ----------------------------------------------
+    # Validate name
+    # ----------------------------------------------
 
     if not name:
         return jsonify({
@@ -78,10 +92,9 @@ def send_sos():
             "error": "Name is required."
         }), 400
 
-
-    # --------------------------------------------------------
-    # LOCATION IS REQUIRED
-    # --------------------------------------------------------
+    # ----------------------------------------------
+    # Validate location
+    # ----------------------------------------------
 
     if latitude is None or longitude is None:
         return jsonify({
@@ -89,10 +102,31 @@ def send_sos():
             "error": "Current location is not available."
         }), 400
 
+    try:
+        latitude = float(latitude)
+        longitude = float(longitude)
 
-    # --------------------------------------------------------
-    # CHECK RENDER ENVIRONMENT VARIABLES
-    # --------------------------------------------------------
+    except (TypeError, ValueError):
+        return jsonify({
+            "success": False,
+            "error": "Invalid GPS coordinates."
+        }), 400
+
+    if not -90 <= latitude <= 90:
+        return jsonify({
+            "success": False,
+            "error": "Invalid latitude."
+        }), 400
+
+    if not -180 <= longitude <= 180:
+        return jsonify({
+            "success": False,
+            "error": "Invalid longitude."
+        }), 400
+
+    # ----------------------------------------------
+    # Check SMS configuration
+    # ----------------------------------------------
 
     if not API_KEY:
         return jsonify({
@@ -112,77 +146,18 @@ def send_sos():
             "error": "SOS recipients are not configured."
         }), 500
 
-
-    # --------------------------------------------------------
-    # VALIDATE GPS COORDINATES
-    # --------------------------------------------------------
-
-    try:
-        latitude = float(latitude)
-        longitude = float(longitude)
-
-    except (TypeError, ValueError):
-
-        return jsonify({
-            "success": False,
-            "error": "Invalid GPS coordinates."
-        }), 400
-
-
-    # Latitude must be between -90 and 90
-    if not -90 <= latitude <= 90:
-
-        return jsonify({
-            "success": False,
-            "error": "Invalid latitude."
-        }), 400
-
-
-    # Longitude must be between -180 and 180
-    if not -180 <= longitude <= 180:
-
-        return jsonify({
-            "success": False,
-            "error": "Invalid longitude."
-        }), 400
-
-
-    # --------------------------------------------------------
-    # CREATE GOOGLE MAPS LOCATION
-    # --------------------------------------------------------
+    # ----------------------------------------------
+    # Google Maps location
+    # ----------------------------------------------
 
     map_url = (
         f"https://www.google.com/maps"
         f"?q={latitude},{longitude}"
     )
 
-
-    # --------------------------------------------------------
-    # CREATE SMS MESSAGE
-    # --------------------------------------------------------
-    #
-    # MESSAGE IS OPTIONAL.
-    #
-    # With message:
-    #
-    # SOS from
-    # John
-    #
-    # Message:
-    # I need help.
-    #
-    # Location Map:
-    # https://www.google.com/maps?q=...
-    #
-    #
-    # Without message:
-    #
-    # SOS from
-    # John
-    #
-    # Location Map:
-    # https://www.google.com/maps?q=...
-    # --------------------------------------------------------
+    # ----------------------------------------------
+    # Build SOS message
+    # ----------------------------------------------
 
     if message:
 
@@ -203,10 +178,9 @@ Location Map:
 Location Map:
 {map_url}"""
 
-
-    # --------------------------------------------------------
-    # BULKSMSBD PAYLOAD
-    # --------------------------------------------------------
+    # ----------------------------------------------
+    # BulkSMSBD request
+    # ----------------------------------------------
 
     payload = {
         "api_key": API_KEY,
@@ -215,11 +189,6 @@ Location Map:
         "message": sms_message
     }
 
-
-    # --------------------------------------------------------
-    # SEND SMS
-    # --------------------------------------------------------
-
     try:
 
         response = requests.post(
@@ -227,11 +196,6 @@ Location Map:
             data=payload,
             timeout=15
         )
-
-
-        # ----------------------------------------------------
-        # RENDER LOG
-        # ----------------------------------------------------
 
         print(
             "BulkSMSBD HTTP status:",
@@ -243,11 +207,6 @@ Location Map:
             response.text
         )
 
-
-        # ----------------------------------------------------
-        # CHECK HTTP STATUS
-        # ----------------------------------------------------
-
         if response.ok:
 
             return jsonify({
@@ -255,30 +214,17 @@ Location Map:
                 "message": "SOS sent successfully."
             })
 
-
         return jsonify({
             "success": False,
             "error": "SMS service returned an error."
         }), 502
 
-
-    # --------------------------------------------------------
-    # TIMEOUT
-    # --------------------------------------------------------
-
     except requests.exceptions.Timeout:
-
-        print("BulkSMSBD request timed out.")
 
         return jsonify({
             "success": False,
             "error": "SMS service timed out. Please try again."
         }), 504
-
-
-    # --------------------------------------------------------
-    # CONNECTION ERROR
-    # --------------------------------------------------------
 
     except requests.exceptions.RequestException as e:
 
@@ -293,9 +239,9 @@ Location Map:
         }), 500
 
 
-# ============================================================
-# RUN APPLICATION
-# ============================================================
+# --------------------------------------------------
+# RUN
+# --------------------------------------------------
 
 if __name__ == "__main__":
 
