@@ -1,0 +1,310 @@
+// ============================================================
+// Risk editor — lives on the MAIN page (no separate admin page).
+//   🔒 Admin button -> sign in -> add a risk by tapping the map,
+//   approve / reject what the daily news job found, edit or stop active risks.
+// Security does NOT depend on this file: the database rules
+// (supabase/schema.sql) only let admins change anything.
+// The sign-in library is downloaded only when someone clicks "Admin".
+// ============================================================
+(function () {
+  'use strict';
+
+  var cfg = window.APP_CONFIG || {};
+  var SB_LIB = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js';
+  var COLORS = { 1: '#f59e0b', 2: '#f97316', 3: '#dc2626' };
+
+  var sb = null, rows = [], tab = 'new', current = null, point = null;
+  var marker = null, circle = null, pendingLayer = null;
+  var built = false;
+
+  function $(id) { return document.getElementById(id); }
+  function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[c]; }); }
+  function safeUrl(u) { return /^https?:\/\//i.test(u || '') ? u : ''; }
+  function show(el, on) { (typeof el === 'string' ? $(el) : el).classList.toggle('hidden', !on); }
+  function isoDate(d) { return d.toISOString().slice(0, 10); }
+  function addDays(n) { return new Date(Date.now() + n * 86400000); }
+  function say(msg, kind) { var m = $('apMsg'); m.className = 'ap-msg' + (kind ? ' ' + kind : ''); m.textContent = msg || ''; }
+
+  // ---------- build the panel (once) ------------------------------------
+  function build() {
+    if (built) return;
+    built = true;
+    var el = document.createElement('section');
+    el.id = 'adminPanel';
+    el.className = 'admin-panel panel hidden';
+    el.innerHTML =
+      '<div class="heading"><b>Risk areas — admin</b><button id="apClose" class="round" type="button" aria-label="Close">×</button></div>' +
+      '<div id="apNotice" class="ap-msg hidden"></div>' +
+      '<div id="apLogin" class="hidden">' +
+        '<p class="ap-hint">Only emails added as admins can change risk areas.</p>' +
+        '<label for="apEmail">Email</label><input id="apEmail" type="email" autocomplete="username">' +
+        '<label for="apPass">Password</label><input id="apPass" type="password" autocomplete="current-password">' +
+        '<button id="apSignIn" class="primary" type="button">Sign in</button>' +
+      '</div>' +
+      '<div id="apMain" class="hidden">' +
+        '<div class="ap-user"><small id="apWho"></small><button id="apOut" class="small" type="button">Sign out</button></div>' +
+        '<div class="mode-tabs" id="apTabs">' +
+          '<button data-t="new" class="active">+ Add risk</button>' +
+          '<button data-t="pending">Review <span id="apCP"></span></button>' +
+          '<button data-t="active">Active <span id="apCA"></span></button>' +
+        '</div>' +
+        '<div id="apList"></div>' +
+        '<div id="apEditor" class="ap-editor hidden">' +
+          '<b id="apEdTitle">Edit</b>' +
+          '<label for="fTitle">What happened, and where</label><input id="fTitle" maxlength="200" placeholder="e.g. Hijack gang active at night near Madhabdi">' +
+          '<div class="ap-row"><div><label for="fType">Type</label><select id="fType"><option value="accident">Accident</option><option value="violence">Violence / crime</option><option value="other">Other</option></select></div>' +
+          '<div><label for="fSev">Severity</label><select id="fSev"><option value="1">1 – low</option><option value="2" selected>2 – medium</option><option value="3">3 – high</option></select></div></div>' +
+          '<div class="ap-row"><div><label for="fRadius">Radius (metres)</label><input id="fRadius" type="number" min="200" max="20000" step="100" value="2000"></div>' +
+          '<div><label for="fExpires">Stops counting on</label><input id="fExpires" type="date"></div></div>' +
+          '<label for="fHappened">Date it happened</label><input id="fHappened" type="date">' +
+          '<div class="ap-hint">📍 <span id="fLoc">Tap the map to choose the place (drag the pin to adjust)</span></div>' +
+          '<div class="ap-hint" id="fSource"></div>' +
+          '<div class="ap-actions" id="apActions"></div>' +
+        '</div>' +
+      '</div>' +
+      '<div id="apMsg" class="ap-msg"></div>';
+    document.body.appendChild(el);
+
+    $('apClose').onclick = close;
+    $('apSignIn').onclick = signIn;
+    $('apPass').addEventListener('keydown', function (e) { if (e.key === 'Enter') signIn(); });
+    $('apOut').onclick = function () { sb.auth.signOut().then(function () { resetEditor(); $('adminBtn').textContent = '🔒 Admin'; showLogin(); }); };
+    $('apTabs').querySelectorAll('button').forEach(function (b) { b.onclick = function () { setTab(b.dataset.t); }; });
+    ['fSev', 'fRadius'].forEach(function (id) { $(id).addEventListener('input', drawCircle); });
+    map.on('click', function (e) { if (current && !$('adminPanel').classList.contains('hidden')) setPoint([e.latlng.lat, e.latlng.lng]); });
+  }
+
+  // ---------- open / close / sign in ---------------------------------------
+  function loadLib() {
+    if (window.supabase) return Promise.resolve();
+    return new Promise(function (resolve, reject) {
+      var s = document.createElement('script');
+      s.src = SB_LIB; s.onload = resolve;
+      s.onerror = function () { reject(new Error('Could not load the sign-in tool. Check your internet connection.')); };
+      document.head.appendChild(s);
+    });
+  }
+
+  function open() {
+    build();
+    show('adminPanel', true);
+    document.body.classList.add('admin-open');
+    if (!cfg.SUPABASE_URL || !cfg.SUPABASE_ANON_KEY) {
+      show('apLogin', false); show('apMain', false);
+      var n = $('apNotice'); n.textContent = 'The risk database is not connected yet. Fill in js/config.js first.'; n.className = 'ap-msg err'; return;
+    }
+    say('Loading…');
+    loadLib().then(function () {
+      sb = sb || window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
+      return sb.auth.getSession();
+    }).then(function (r) {
+      var session = r.data && r.data.session;
+      if (!session) { say(''); showLogin(); return; }
+      return enterIfAdmin(session);
+    }).catch(function (e) { say(e.message, 'err'); });
+  }
+
+  function close() {
+    show('adminPanel', false);
+    document.body.classList.remove('admin-open');
+    resetEditor();
+  }
+
+  function showLogin() { show('apMain', false); show('apLogin', true); }
+
+  function signIn() {
+    say('Signing in…');
+    sb.auth.signInWithPassword({ email: $('apEmail').value.trim(), password: $('apPass').value }).then(function (r) {
+      if (r.error) { say(r.error.message, 'err'); return; }
+      $('apPass').value = '';
+      return enterIfAdmin(r.data.session);
+    });
+  }
+
+  function enterIfAdmin(session) {
+    return sb.rpc('is_admin').then(function (res) {
+      if (res.data !== true) {
+        return sb.auth.signOut().then(function () {
+          showLogin();
+          say(session.user.email + ' is not an admin. Ask the owner to add this email.', 'err');
+        });
+      }
+      say('');
+      $('apWho').textContent = session.user.email;
+      $('adminBtn').textContent = '🔓 Admin';
+      show('apLogin', false); show('apMain', true);
+      setTab(tab);
+      loadRows();
+    });
+  }
+
+  // ---------- map helpers -------------------------------------------------------
+  function setPoint(p, pan) {
+    point = p;
+    $('fLoc').textContent = p[0].toFixed(5) + ', ' + p[1].toFixed(5);
+    if (!marker) {
+      marker = L.marker(p, { draggable: true, zIndexOffset: 2000 }).addTo(map);
+      marker.on('dragend', function () { var ll = marker.getLatLng(); setPoint([ll.lat, ll.lng]); });
+    } else marker.setLatLng(p);
+    drawCircle();
+    if (pan) map.setView(p, Math.max(map.getZoom(), 11));
+  }
+
+  function drawCircle() {
+    if (circle) { map.removeLayer(circle); circle = null; }
+    if (!point) return;
+    var c = COLORS[$('fSev').value] || COLORS[2];
+    circle = L.circle(point, { radius: parseInt($('fRadius').value, 10) || 2000, color: c, weight: 2, fillColor: c, fillOpacity: 0.3, interactive: false }).addTo(map);
+  }
+
+  function clearEditorMap() {
+    if (marker) { map.removeLayer(marker); marker = null; }
+    if (circle) { map.removeLayer(circle); circle = null; }
+    point = null;
+  }
+
+  function drawPending() {
+    if (!pendingLayer) pendingLayer = L.layerGroup().addTo(map);
+    pendingLayer.clearLayers();
+    if (tab !== 'pending') return;
+    rows.filter(function (r) { return r.status === 'pending'; }).forEach(function (r) {
+      L.circleMarker([r.lat, r.lng], { radius: 9, color: '#fff', weight: 2, fillColor: '#f79009', fillOpacity: 1 })
+        .on('click', function () { edit(r); }).bindTooltip('Pending: ' + r.title).addTo(pendingLayer);
+    });
+  }
+
+  // ---------- data -------------------------------------------------------------------
+  function isActive(r) { return r.status === 'approved' && (!r.expires_at || Date.parse(r.expires_at) > Date.now()); }
+
+  function loadRows() {
+    return sb.from('risk_areas').select('*').order('created_at', { ascending: false }).limit(500).then(function (r) {
+      if (r.error) { say(r.error.message, 'err'); return; }
+      rows = r.data || [];
+      $('apCP').textContent = '(' + rows.filter(function (x) { return x.status === 'pending'; }).length + ')';
+      $('apCA').textContent = '(' + rows.filter(isActive).length + ')';
+      renderList();
+      drawPending();
+    });
+  }
+
+  function renderList() {
+    var box = $('apList');
+    if (tab === 'new') { box.innerHTML = ''; return; }
+    var items = rows.filter(function (r) { return tab === 'pending' ? r.status === 'pending' : isActive(r); });
+    if (!items.length) { box.innerHTML = '<div class="ap-empty">' + (tab === 'pending' ? 'Nothing waiting for approval.' : 'No active risk areas.') + '</div>'; return; }
+    box.innerHTML = items.map(function (r) {
+      return '<div class="ap-item' + (current && current.id === r.id ? ' sel' : '') + '" data-id="' + esc(r.id) + '">' +
+        '<span class="pill ' + esc(r.source) + '">' + esc(r.source) + '</span><span class="pill">' + esc(r.type) + ' · sev ' + esc(r.severity) + '</span><br>' +
+        '<b>' + esc(r.title) + '</b>' +
+        '<small>' + (r.place_text ? 'Matched place: ' + esc(r.place_text) + ' · ' : '') + esc((r.happened_on || r.created_at || '').slice(0, 10)) + '</small></div>';
+    }).join('');
+    box.querySelectorAll('.ap-item').forEach(function (el) {
+      el.onclick = function () { edit(rows.filter(function (r) { return r.id === el.dataset.id; })[0]); };
+    });
+  }
+
+  // ---------- editor ---------------------------------------------------------------------
+  function fill(r) {
+    $('fTitle').value = r.title || '';
+    $('fType').value = r.type || 'accident';
+    $('fSev').value = String(r.severity || 2);
+    $('fRadius').value = r.radius_m || 2000;
+    $('fHappened').value = r.happened_on || '';
+    $('fExpires').value = r.expires_at ? r.expires_at.slice(0, 10) : '';
+    var src = safeUrl(r.source_url);
+    $('fSource').innerHTML = src ? 'Source: <a href="' + esc(src) + '" target="_blank" rel="noopener noreferrer">open the news report</a> — check the place before approving.' : '';
+    say('');
+  }
+
+  function buttons(list) {
+    var box = $('apActions');
+    box.innerHTML = list.map(function (b) { return '<button class="btn ' + b[1] + '" data-act="' + b[0] + '" type="button">' + b[2] + '</button>'; }).join('');
+    box.querySelectorAll('button').forEach(function (b) { b.onclick = function () { act(b.dataset.act); }; });
+  }
+
+  function edit(r) {
+    current = r; show('apEditor', true);
+    $('apEdTitle').textContent = r.status === 'pending' ? 'Review this report' : 'Edit active risk';
+    fill(r); clearEditorMap(); setPoint([r.lat, r.lng], true);
+    buttons(r.status === 'pending'
+      ? [['approve', 'ok', 'Approve'], ['reject', 'bad', 'Reject']]
+      : [['save', 'blue', 'Save changes'], ['expire', '', 'Stop counting now'], ['delete', 'bad', 'Delete']]);
+    renderList();
+  }
+
+  function newManual() {
+    current = {}; show('apEditor', true);
+    $('apEdTitle').textContent = 'Add a risk area';
+    fill({ severity: 2, radius_m: 2000, happened_on: isoDate(new Date()), expires_at: addDays(90).toISOString() });
+    clearEditorMap();
+    buttons([['create', 'ok', 'Add (goes live now)']]);
+    say('Tap the map to place it.');
+  }
+
+  function resetEditor() {
+    current = null;
+    if ($('apEditor')) show('apEditor', false);
+    if (built) clearEditorMap();
+    if (pendingLayer) pendingLayer.clearLayers();
+  }
+
+  function setTab(t) {
+    tab = t;
+    $('apTabs').querySelectorAll('button').forEach(function (b) { b.classList.toggle('active', b.dataset.t === t); });
+    current = null; show('apEditor', false); clearEditorMap();
+    if (t === 'new') newManual();
+    renderList(); drawPending();
+  }
+
+  function readForm() {
+    var title = $('fTitle').value.trim();
+    if (!title) throw new Error('Please write what happened.');
+    if (!point) throw new Error('Please tap the map to choose the place.');
+    var radius = parseInt($('fRadius').value, 10);
+    if (!(radius >= 200 && radius <= 20000)) throw new Error('Radius must be between 200 and 20000 metres.');
+    return {
+      title: title, type: $('fType').value, severity: parseInt($('fSev').value, 10),
+      lat: point[0], lng: point[1], radius_m: radius,
+      happened_on: $('fHappened').value || null,
+      expires_at: $('fExpires').value ? new Date($('fExpires').value + 'T23:59:59').toISOString() : null
+    };
+  }
+
+  function act(name) {
+    var q, f;
+    try {
+      if (name === 'approve') { f = readForm(); if (!f.expires_at) f.expires_at = addDays(30).toISOString(); f.status = 'approved'; q = sb.from('risk_areas').update(f).eq('id', current.id); }
+      else if (name === 'save') { f = readForm(); q = sb.from('risk_areas').update(f).eq('id', current.id); }
+      else if (name === 'reject') q = sb.from('risk_areas').update({ status: 'rejected' }).eq('id', current.id);   // kept, so the news job never re-adds it
+      else if (name === 'expire') q = sb.from('risk_areas').update({ expires_at: new Date().toISOString() }).eq('id', current.id);
+      else if (name === 'delete') { if (!confirm('Delete this risk area permanently?')) return; q = sb.from('risk_areas').delete().eq('id', current.id); }
+      else if (name === 'create') { f = readForm(); if (!f.expires_at) f.expires_at = addDays(90).toISOString(); f.source = 'manual'; f.status = 'approved'; q = sb.from('risk_areas').insert(f); }
+    } catch (e) { say(e.message, 'err'); return; }
+
+    say('Saving…');
+    q.then(function (r) {
+      if (r.error) { say(r.error.message, 'err'); return; }
+      var wasNew = name === 'create';
+      current = null; show('apEditor', false); clearEditorMap();
+      if (wasNew) newManual();                    // ready for the next one
+      loadRows().then(function () { say('Saved ✓', 'good'); });
+      if (window.PlannerAPI) window.PlannerAPI.reloadRisks();   // the public map updates at once
+    });
+  }
+
+  // ---------- start ---------------------------------------------------------------------------
+  function hasStoredSession() {
+    try { for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (/^sb-.*-auth-token$/.test(k)) return true; } } catch (e) { /* storage blocked */ }
+    return false;
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    var btn = $('adminBtn');
+    if (!btn) return;
+    if (hasStoredSession()) btn.textContent = '🔓 Admin';
+    btn.onclick = function () {
+      var p = $('adminPanel');
+      if (p && !p.classList.contains('hidden')) close(); else open();
+    };
+  });
+})();

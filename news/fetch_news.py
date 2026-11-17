@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Daily news job: find road accidents / road violence in English Bangladeshi news
-and add them to Supabase as PENDING risk areas for you to approve in admin.html.
+and add them to Supabase as PENDING risk areas for you to approve on the map (Admin button).
 
 Nothing found here ever affects a route until you approve it.
 
@@ -366,7 +366,7 @@ def main(argv=None):
         if rows:
             supabase_request("POST", "/rest/v1/risk_areas?on_conflict=source_url", rows,
                              {"Prefer": "resolution=ignore-duplicates,return=minimal"})
-    log(f"Added {len(rows)} new PENDING risk area(s). Review them in admin.html.")
+    log(f"Added {len(rows)} new PENDING risk area(s). Review them on the map (Admin button).")
 
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:

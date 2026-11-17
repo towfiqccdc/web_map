@@ -11,13 +11,21 @@
 // NEVER paste the "service_role" key here.
 // ============================================================
 window.APP_CONFIG = {
-  SUPABASE_URL: "",       // e.g. "https://abcdxyz.supabase.co"
-  SUPABASE_ANON_KEY: "",  // e.g. "eyJhbGciOi..."
+  SUPABASE_URL: "https://qftuuhanfemsbjihzaeu.supabase.co",
+  SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFmdHV1aGFuZmVtc2JqaWh6YWV1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ4ODM1NjUsImV4cCI6MjExMDQ1OTU2NX0.zmfWYbouN6XH1RudynF8jaHAaNLtxwLzbJYu0TIIm-I",
 
   // Routing service. The free public OSRM demo is fine for testing but has
   // no guarantee; for real use, host your own or use a paid/keyed provider
   // that speaks the same OSRM API.
   ROUTING_URL: "https://router.project-osrm.org/route/v1/driving",
+
+  // LIVE TRAFFIC overlay (optional). Leave empty and the Traffic button simply opens
+  // Google Maps with its traffic layer. For an in-map layer, get a free key at
+  // developer.tomtom.com and paste a tile address like this (replace YOUR_KEY):
+  //   "https://api.tomtom.com/traffic/map/4/tile/flow/relative0/{z}/{x}/{y}.png?key=YOUR_KEY"
+  // (Check TomTom's "Raster Flow Tiles" page for the current address and for coverage.)
+  TRAFFIC_TILE_URL: "",
+  TRAFFIC_ATTRIBUTION: "Traffic © TomTom",
 
   // Place search (free OpenStreetMap service; do not hammer it)
   GEOCODER_URL: "https://nominatim.openstreetmap.org/search",

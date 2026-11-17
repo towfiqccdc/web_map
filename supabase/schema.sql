@@ -41,6 +41,10 @@ as $$
   );
 $$;
 
+-- Only signed-in users may call it (anonymous visitors cannot).
+revoke execute on function public.is_admin() from public, anon;
+grant execute on function public.is_admin() to authenticated;
+
 -- 3) Security rules (Row Level Security) ---------------------
 alter table public.risk_areas enable row level security;
 alter table public.admins     enable row level security;   -- no policies = nobody can read/write it from the website
