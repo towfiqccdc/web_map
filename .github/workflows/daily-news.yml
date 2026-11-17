@@ -1,0 +1,27 @@
+name: Daily news check
+
+# Runs every day at 06:30 Bangladesh time (00:30 UTC), and whenever you press
+# "Run workflow" on the Actions tab. It only ADDS pending items; nothing goes live
+# until you approve it in admin.html.
+on:
+  schedule:
+    - cron: "30 0 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  news:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Search the news and add pending risk areas
+        run: python3 news/fetch_news.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}

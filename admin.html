@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Risk areas — Admin</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;font-family:Inter,-apple-system,"Segoe UI",sans-serif;color:#172033;background:#f5f6f8}
+  button,input,select{font:inherit}
+  .hidden{display:none!important}
+  .login{max-width:340px;margin:12vh auto;background:#fff;border-radius:14px;padding:22px;box-shadow:0 8px 28px rgba(0,0,0,.12)}
+  .login h1{margin:0 0 4px;font-size:20px} .login p{margin:0 0 14px;color:#667085;font-size:13px}
+  label{display:block;font-size:11px;font-weight:700;color:#667085;margin:10px 0 4px}
+  input,select{width:100%;padding:9px;border:1px solid #d8dee8;border-radius:9px;background:#fff;font-size:13px}
+  .btn{border:0;border-radius:9px;padding:9px 12px;font-weight:700;cursor:pointer;background:#eef2f6;color:#172033;font-size:12px}
+  .btn.primary{background:#1769aa;color:#fff} .btn.ok{background:#16a34a;color:#fff} .btn.bad{background:#dc2626;color:#fff}
+  .btn:disabled{opacity:.5;cursor:default}
+  .msg{font-size:12px;margin-top:10px;color:#475467} .msg.err{color:#b42318;font-weight:600} .msg.good{color:#166534;font-weight:600}
+  .app{display:grid;grid-template-columns:400px 1fr;height:100%}
+  .side{background:#fff;overflow-y:auto;padding:14px;border-right:1px solid #e4e7ec}
+  #map{height:100%}
+  .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+  .top b{font-size:16px} .top small{color:#667085}
+  .tabs{display:flex;gap:4px;background:#f2f4f7;border-radius:10px;padding:3px;margin-bottom:10px}
+  .tabs button{flex:1;border:0;background:transparent;border-radius:8px;padding:8px 4px;font-size:12px;font-weight:700;color:#667085;cursor:pointer}
+  .tabs button.active{background:#fff;color:#172033;box-shadow:0 1px 4px rgba(0,0,0,.12)}
+  .item{border:1px solid #e7eaf0;border-radius:10px;padding:9px;margin-bottom:8px;cursor:pointer}
+  .item.sel{border-color:#172033;box-shadow:0 0 0 1px #172033}
+  .item b{font-size:13px} .item small{display:block;color:#667085;font-size:11px;margin-top:3px}
+  .pill{display:inline-block;font-size:10px;font-weight:700;border-radius:999px;padding:2px 7px;background:#eef2f6;margin-right:4px}
+  .pill.news{background:#e0f2fe;color:#075985} .pill.manual{background:#ede9fe;color:#5b21b6}
+  .editor{border-top:2px solid #172033;margin-top:12px;padding-top:6px}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .actions{display:flex;gap:6px;margin-top:12px;flex-wrap:wrap}
+  .hint{font-size:11px;color:#667085;margin-top:4px}
+  .empty{color:#667085;font-size:13px;padding:10px 2px}
+  @media(max-width:800px){.app{grid-template-columns:1fr;grid-template-rows:42vh 1fr}#map{order:-1}.side{border-right:0}}
+</style>
+</head>
+<body>
+
+<div id="setup" class="login hidden">
+  <h1>Not connected yet</h1>
+  <p>Open <code>js/config.js</code> and paste your Supabase URL and anon key, then reload this page.</p>
+</div>
+
+<div id="loginBox" class="login hidden">
+  <h1>Admin login</h1>
+  <p>Only the emails you added to the <code>admins</code> table can approve or add risk areas.</p>
+  <label for="email">Email</label><input id="email" type="email" autocomplete="username">
+  <label for="password">Password</label><input id="password" type="password" autocomplete="current-password">
+  <div class="actions"><button id="loginBtn" class="btn primary" type="button">Sign in</button></div>
+  <div id="loginMsg" class="msg"></div>
+</div>
+
+<div id="app" class="app hidden">
+  <div class="side">
+    <div class="top"><div><b>Risk areas</b><br><small id="who"></small></div><button id="logoutBtn" class="btn" type="button">Sign out</button></div>
+    <div class="tabs" id="tabs">
+      <button data-tab="pending" class="active">Pending <span id="cPending"></span></button>
+      <button data-tab="active">Active <span id="cActive"></span></button>
+      <button data-tab="new">+ Add manual</button>
+    </div>
+    <div id="list"></div>
+
+    <div id="editor" class="editor hidden">
+      <b id="edTitle">Edit</b>
+      <label for="fTitle">Title (what happened, where)</label><input id="fTitle" maxlength="200">
+      <div class="row2">
+        <div><label for="fType">Type</label><select id="fType"><option value="accident">Accident</option><option value="violence">Violence / crime</option><option value="other">Other</option></select></div>
+        <div><label for="fSev">Severity</label><select id="fSev"><option value="1">1 — low</option><option value="2" selected>2 — medium</option><option value="3">3 — high</option></select></div>
+      </div>
+      <div class="row2">
+        <div><label for="fRadius">Radius (metres)</label><input id="fRadius" type="number" min="200" max="20000" step="100" value="2000"></div>
+        <div><label for="fExpires">Stops counting on</label><input id="fExpires" type="date"></div>
+      </div>
+      <label for="fHappened">Date it happened</label><input id="fHappened" type="date">
+      <div class="hint">Location: <span id="fLoc">click the map or drag the marker</span></div>
+      <div class="hint" id="fSource"></div>
+      <div class="actions" id="edActions"></div>
+      <div id="edMsg" class="msg"></div>
+    </div>
+  </div>
+  <div id="map"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="js/config.js"></script>
+<script src="js/admin.js"></script>
+</body>
+</html>

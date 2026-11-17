@@ -1,0 +1,14 @@
+# One RSS feed address per line. Lines starting with # are ignored.
+# The daily job prints which feeds worked and which failed, so a dead address
+# never stops the job — just delete it or replace it here.
+
+# --- Google News searches (English, Bangladesh, last 2 days) -----------------
+https://news.google.com/rss/search?q=road+accident+Bangladesh+when:2d&hl=en-BD&gl=BD&ceid=BD:en
+https://news.google.com/rss/search?q=highway+robbery+OR+hijack+OR+mugging+Bangladesh+when:2d&hl=en-BD&gl=BD&ceid=BD:en
+https://news.google.com/rss/search?q=bus+truck+collision+killed+Bangladesh+when:2d&hl=en-BD&gl=BD&ceid=BD:en
+
+# --- Newspaper feeds (addresses not yet verified — check the first run's report) ---
+https://www.thedailystar.net/rss.xml
+https://www.tbsnews.net/rss.xml
+https://www.dhakatribune.com/feed
+https://en.prothomalo.com/feed
