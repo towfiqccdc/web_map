@@ -10,6 +10,17 @@
 <link rel="stylesheet" href="css/style.css">
 
 <style>
+    /* css/style.css locks the page (overflow:hidden; height:100%) for
+       the full-screen map. This page is a normal scrolling form, so
+       undo that here — otherwise the Send button can be unreachable
+       on small phones. */
+    html,
+    body {
+        height: auto;
+        min-height: 100%;
+        overflow: auto;
+    }
+
     body {
         margin: 0;
         font-family: Arial, sans-serif;
