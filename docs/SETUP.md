@@ -1,12 +1,12 @@
 # Setting up the live risk database (one time, about 20 minutes)
 
-What you are building: the news job and your admin page put **risk areas** into a free online
+What you are building: the news job and the 🔒 Admin button on the main map put **risk areas** into a free online
 database (Supabase). The public map reads the **approved** ones and, when someone types
 *From → To*, picks the route with the fewest reported risks.
 
 ```
 news (daily)  ──▶ [pending] ──you approve──▶ [approved] ──▶ map: From → To  ──▶ safest route
-admin.html (manual, instantly approved) ───────────────────┘
+map page → 🔒 Admin (manual, instantly approved) ──────────┘
 ```
 
 ## 1. Create the database (Supabase, free)
@@ -32,9 +32,9 @@ admin.html (manual, instantly approved) ─────────────�
 It then runs by itself every day at 06:30 Bangladesh time.
 
 ## 4. Every day
-1. Open `https://YOUR-SITE/admin.html` and sign in.
-2. **Pending** shows what the news job found. Click one, check the map location (drag the marker if it is wrong) and the news link, then **Approve** or **Reject**.
-3. **+ Add manual** lets you click the map and add a risk yourself; it goes live immediately.
+1. Open the map and tap **🔒 Admin** (top right). Sign in with your admin email and password. There is no separate admin page.
+2. **Review** (pending) shows what the news job found. Click one, check the map location (drag the marker if it is wrong) and the news link, then **Approve** or **Reject**.
+3. **New** lets you tap the map and add a risk yourself; it goes live immediately.
 4. **Active** lets you edit, stop or delete a risk. Risks stop counting automatically on their end date (news: 30 days, manual: 90 days — you can change the date).
 
 ## How the safest route is chosen
@@ -49,4 +49,8 @@ It then runs by itself every day at 06:30 Bangladesh time.
 - **Free services have limits.** The free route service (OSRM demo) and place search (OpenStreetMap Nominatim) have no guarantees; for heavy use, host or pay for them (`js/config.js`).
 - **Free Supabase projects pause** after about a week with no activity; the daily job normally keeps it awake.
 - **GitHub switches off scheduled jobs** in a repo that has had no commits for 60 days. If that happens, press **Enable workflow** on the Actions tab.
-- `admin.html` and the new `js/` files are served by your website host (GitHub Pages). The Render server only serves the pages it already did.
+- All new `js/` files are served by your website host (GitHub Pages). The Render server only serves the pages it already did.
+
+## Base map and live traffic
+- The base map is **Esri World Imagery** (satellite, no labels) so the markers and routes stand out. The **Street map** button switches to a labelled map. Esri requires its attribution to stay visible (it is shown bottom right) and has its own terms for heavy use.
+- **Traffic**: with no key, the button opens Google Maps traffic for the area you are looking at. For a live layer *on* this map, get a free key from a traffic tile provider such as TomTom and paste the tile address into `TRAFFIC_TILE_URL` in `js/config.js` (example inside the file). Check the provider's coverage for Bangladesh first.

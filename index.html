@@ -9,8 +9,10 @@
 </head>
 <body>
 <div id="map"></div>
-<header class="topbar"><div><b>Emergency Route Map</b><small>Live location + project route safety</small></div><a id="sosBtn" class="danger" href="sos.html">🆘 SOS</a></header>
+<header class="topbar"><div class="brand"><b>Emergency Route Map</b><small>Live location + project route safety</small></div><div class="top-actions"><button id="adminBtn" class="ghost" type="button" title="Add or approve risk areas">🔒 Admin</button><a id="sosBtn" class="danger" href="sos.html">🆘 SOS</a></div></header>
 <section class="route-panel panel">
+<button id="rpToggle" class="rp-toggle" type="button" aria-expanded="true">🛣️ Plan a safe journey <span>▾</span></button>
+<div class="rp-body">
 <div class="mode-tabs"><button class="active" data-mode="journey">Safe journey</button><button data-mode="project">Project route</button></div>
 <div id="modeJourney">
 <label for="fromInput">From</label>
@@ -24,9 +26,33 @@
 <div id="modeProject" class="hidden">
 <label>Project route</label><select id="routeSelect"></select><button id="showRouteBtn" class="primary">Show Route</button>
 </div>
+</div>
 </section>
-<section class="nearby panel"><div class="heading"><div><h2>Nearby emergency services</h2><small id="locationStatus">Finding your location…</small></div><button id="locateBtn" class="round">⌖</button></div><div class="tabs" id="tabs"><button class="active" data-type="all">All</button><button data-type="hospital">Hospital</button><button data-type="police">Police</button><button data-type="fire">Fire</button><button data-type="fuel">Fuel</button></div><div id="serviceList"></div></section>
-<div class="map-tools"><button id="layersBtn">Layers</button><button id="satelliteBtn">Satellite</button><button id="riskBtn">Risk</button></div>
+<section id="nearby" class="nearby panel">
+<div class="nb-head" id="nbHead">
+<div class="nb-title"><b>Nearby help</b><small id="locationStatus">Finding your location…</small></div>
+<a class="call999" href="tel:999" title="Call the national emergency number">📞 Call 999</a>
+<button id="nbToggle" class="round" type="button" aria-expanded="false" aria-label="Show nearby services">▲</button>
+</div>
+<div id="nbLocate" class="nb-locate hidden">
+<p>Turn on your location to see the closest hospital, police and fire station.</p>
+<button id="locateBtn" class="primary" type="button">📍 Use my location</button>
+<button id="pickLocBtn" class="small" type="button">Or tap the map to set where you are</button>
+</div>
+<div id="nbQuick" class="nb-quick">
+<button type="button" data-type="hospital"><span class="q-ico">🏥</span><span class="q-name">Hospital</span><span class="q-dist">–</span></button>
+<button type="button" data-type="police"><span class="q-ico">🚔</span><span class="q-name">Police</span><span class="q-dist">–</span></button>
+<button type="button" data-type="fire"><span class="q-ico">🚒</span><span class="q-name">Fire</span><span class="q-dist">–</span></button>
+<button type="button" data-type="fuel"><span class="q-ico">⛽</span><span class="q-name">Fuel</span><span class="q-dist">–</span></button>
+</div>
+<div id="nbList" class="nb-list hidden">
+<div id="serviceList"></div>
+<div class="nb-foot"><button id="nbMore" class="small" type="button">Show more</button><button id="nbRefresh" class="small" type="button">↻ Update my location</button></div>
+<p class="nb-note">Times are rough estimates for a car. Always follow the road conditions.</p>
+</div>
+</section>
+<div id="trafficLegend" class="traffic-legend hidden"><b>Traffic</b><i class="g"></i>Free <i class="y"></i>Slow <i class="r"></i>Jam</div>
+<div class="map-tools"><button id="layersBtn">Layers</button><button id="basemapBtn">Street map</button><button id="trafficBtn" type="button">Traffic</button><button id="riskBtn">Risk</button></div>
 <section id="layersPanel" class="layers panel hidden"><div class="heading"><b>Map layers</b><button id="closeLayersBtn" class="round">×</button></div><label><input type="checkbox" data-layer="hospital" checked> Hospitals</label><label><input type="checkbox" data-layer="police" checked> Police stations</label><label><input type="checkbox" data-layer="fire" checked> Fire stations</label><label><input type="checkbox" data-layer="fuel" checked> Fuel stations</label><label><input type="checkbox" data-layer="accident" checked> Accident blackspots</label><label><input type="checkbox" data-layer="crime" checked> Crime-prone areas</label><label><input type="checkbox" data-layer="military" checked> Military areas</label><label><input type="checkbox" data-layer="live" checked> Reported risk areas (live)</label></section>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script><script src="js/data.js"></script><script src="js/config.js"></script><script src="js/routesafety.js"></script><script src="js/riskstore.js"></script><script src="js/app.js"></script><script src="js/planner.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script><script src="js/data.js"></script><script src="js/config.js"></script><script src="js/routesafety.js"></script><script src="js/riskstore.js"></script><script src="js/app.js"></script><script src="js/planner.js"></script><script src="js/nearby.js"></script><script src="js/traffic.js"></script><script src="js/risk-editor.js"></script>
 </body></html>

@@ -44,7 +44,7 @@
     liveLayer.clearLayers();
     riskState.risks.forEach(function (r) {
       var c = SEV_COLOR[r.severity] || SEV_COLOR[2];
-      var circle = L.circle([r.lat, r.lng], { radius: r.radius_m || 1000, color: c, weight: 1, fillColor: c, fillOpacity: 0.15 });
+      var circle = L.circle([r.lat, r.lng], { radius: r.radius_m || 1000, color: c, weight: 2, fillColor: c, fillOpacity: 0.28 });
       var link = safeUrl(r.source_url);
       circle.bindPopup(
         '<b>' + (TYPE_ICON[r.type] || '❗') + ' ' + esc(r.title) + '</b>' +
@@ -121,17 +121,15 @@
   function drawRoutes() {
     clearRoutes();
     ranked.forEach(function (r, i) {
-      var on = i === selected;
-      var line = L.polyline(r.coords, {
-        color: on ? LEVEL[r.level].color : '#7b8794',
-        weight: on ? 8 : 5,
-        opacity: on ? 0.95 : 0.7,
-        dashArray: on ? null : '8 8'
-      }).addTo(map);
-      line.on('click', function () { selected = i; drawRoutes(); renderResults(); });
-      if (on) line.bringToFront();
-      routeLayers.push(line);
+      if (i === selected) return;
+      routeLayers.push(L.polyline(r.coords, { color: '#f2f4f7', weight: 5, opacity: 0.85, dashArray: '8 8' }).addTo(map)
+        .on('click', function () { selected = i; drawRoutes(); renderResults(); }));
     });
+    var best = ranked[selected];
+    if (best) {
+      routeLayers.push(L.polyline(best.coords, { color: '#ffffff', weight: 13, opacity: 0.95 }).addTo(map));          // outline
+      routeLayers.push(L.polyline(best.coords, { color: LEVEL[best.level].color, weight: 8, opacity: 1 }).addTo(map));
+    }
     if (routeLayers.length) map.fitBounds(L.featureGroup(routeLayers).getBounds(), { padding: [40, 40] });
   }
 
@@ -210,6 +208,12 @@
     layers.live = liveLayer;            // lets the "Layers" checkbox control it
 
     document.querySelectorAll('.mode-tabs button').forEach(function (b) { b.onclick = function () { setMode(b.dataset.mode); }; });
+
+    // phones: the planner starts folded to one bar so the map stays visible
+    var panel = document.querySelector('.route-panel'), tog = $('rpToggle');
+    function fold(on) { panel.classList.toggle('rp-collapsed', on); tog.setAttribute('aria-expanded', String(!on)); }
+    tog.onclick = function () { fold(!panel.classList.contains('rp-collapsed')); };
+    if (window.matchMedia('(max-width:700px)').matches) fold(true);
     $('planBtn').onclick = planJourney;
     ['fromInput', 'toInput'].forEach(function (id) {
       $(id).addEventListener('keydown', function (e) { if (e.key === 'Enter') planJourney(); });
@@ -222,7 +226,12 @@
       setStatus('');
     };
 
-    RiskStore.loadRisks().then(function (res) {
+    window.PlannerAPI = { reloadRisks: reloadRisks };
+    reloadRisks();
+  }
+
+  function reloadRisks() {
+    return RiskStore.loadRisks().then(function (res) {
       riskState = res;
       drawRiskAreas();
       if (ranked.length) { ranked = RS.rankRoutes(ranked, allRisks(), cfg.ROUTE_BUFFER_M, Date.now()); selected = 0; drawRoutes(); renderResults(); }
