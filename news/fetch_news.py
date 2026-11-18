@@ -105,6 +105,92 @@ BN_NOT_INCIDENT = ("মামলার রায়", "রায় ঘোষণ
 BN_NOT_SECURITY = ("গ্যাস", "সিলিন্ডার", "বয়লার", "কারখানা", "চুলা", "আতশবাজি", "সিনেমা")
 BN_DEATHS = re.compile(r"([০-৯0-9]+|" + "|".join(BN_NUMBER_WORDS) + r")\s*(?:জন|জনের)?\s*(?:নিহত|মারা|মৃত্যু)")
 
+# ------------------------------------------------------------------ Bangla -> English titles
+BN_OUTLETS = {
+    "প্রথম আলো": "Prothom Alo", "দৈনিক ইত্তেফাক": "Daily Ittefaq", "ইত্তেফাক": "Daily Ittefaq", "যুগান্তর": "Jugantor",
+    "কালের কণ্ঠ": "Kaler Kantho", "সমকাল": "Samakal", "ঢাকা পোস্ট": "Dhaka Post", "বাংলাদেশ প্রতিদিন": "Bangladesh Pratidin",
+    "জাগো নিউজ ২৪": "Jago News 24", "জাগোনিউজ২৪.কম": "Jago News 24", "বাংলানিউজ২৪.কম": "Banglanews24", "নয়া দিগন্ত": "Naya Diganta",
+    "ইনকিলাব": "Inqilab", "দেশ রূপান্তর": "Desh Rupantor", "মানবজমিন": "Manab Zamin", "বিডিনিউজ ২৪": "bdnews24",
+    "বণিক বার্তা": "Bonik Barta", "দৈনিক স্টার": "The Daily Star", "ডেইলি স্টার বাংলা": "The Daily Star (Bangla)",
+    "ঢাকা ট্রিবিউন": "Dhaka Tribune", "চ্যানেল আই অনলাইন": "Channel i", "এনটিভি": "NTV", "আরটিভি": "RTV", "সময় নিউজ": "Somoy News",
+}
+MAX_TRANSLATIONS_PER_RUN = 60
+
+
+class Translator:
+    """Bangla -> English with the free MyMemory service (no key). Best effort: cached, capped per run,
+    and anything that looks wrong (quota message, still Bangla) is treated as 'no translation'.
+    Set MYMEMORY_EMAIL to raise MyMemory's daily limit (optional)."""
+    URL = "https://api.mymemory.translated.net/get"
+
+    def __init__(self, max_calls=MAX_TRANSLATIONS_PER_RUN, sleep=0.4, fetch=None, email=None):
+        self.cache, self.calls, self.max_calls, self.sleep = {}, 0, max_calls, sleep
+        self.fetch = fetch or http_get
+        self.email = (email or "").strip()
+
+    def text(self, bn):
+        key = bn.strip()
+        if key in self.cache:
+            return self.cache[key]
+        if self.calls >= self.max_calls:
+            return None
+        self.calls += 1
+        q = {"q": key[:160], "langpair": "bn|en"}
+        if self.email:
+            q["de"] = self.email
+        result = None
+        try:
+            data = json.loads(self.fetch(f"{self.URL}?{urllib.parse.urlencode(q)}"))
+            out = (data.get("responseData") or {}).get("translatedText") or ""
+            out = html.unescape(out).strip()
+            if (str(data.get("responseStatus")) == "200" and out and "MYMEMORY" not in out.upper()
+                    and not BN_CHARS.search(out) and out.lower() != key.lower()):
+                result = out
+        except Exception as e:
+            log(f"   translate failed: {e}")
+        self.cache[key] = result
+        time.sleep(self.sleep)
+        return result
+
+    def title(self, title):
+        """Google News titles look like 'Headline - Outlet'. Translate the headline, map the outlet name."""
+        head, sep, outlet = title.rpartition(" - ")
+        if not sep:
+            head, outlet = title, ""
+        en = self.text(head)
+        if not en:
+            return None
+        if outlet:
+            outlet = BN_OUTLETS.get(outlet.strip()) or (self.text(outlet) if BN_CHARS.search(outlet) else outlet.strip()) or outlet.strip()
+            return f"{en} - {outlet}"
+        return en
+
+
+def describe_bn(title, summary, place_text=""):
+    """Offline English headline for a Bangla report, used when translation is unavailable.
+    Built from the same keywords the classifier uses, so it is always English and always accurate to them."""
+    text = f"{title}. {summary}"
+    labels = []
+    if _has(text, ("ককটেল", "বোমা", "বিস্ফোরণ")):
+        labels.append("Cocktail / bomb blast")
+    if _has(text, BN_FIRE[:3]) and _has(text, BN_VEHICLE):
+        labels.append("Bus set on fire" if "বাস" in text else "Vehicle set on fire")
+    if _has(text, ("অবরোধ", "অবরুদ্ধ", "ব্লকেড")):
+        labels.append("Road blockade")
+    if _has(text, ("ডাকাতি", "ছিনতাই", "হাইজ্যাক")):
+        labels.append("Robbery / hijack")
+    if _has(text, ("হামলা", "ভাঙচুর", "গুলি", "ছুরিকাঘাত")) or ("সংঘর্ষ" in text and not _has(text, BN_CRASH)):
+        labels.append("Attack / clash / vandalism")
+    if _has(text, BN_CRASH):
+        labels.append("Road accident")
+    label = " + ".join(labels[:3]) or "Road incident"
+    c = classify_bn(text) or {}
+    if c.get("deaths"):
+        label += f" ({c['deaths']} killed)"
+    where = place_text.split(" (")[0]
+    return f"{label}" + (f" — {where}" if where else "") + " (Bangla report)"
+
+
 # ------------------------------------------------------------------ places we know exactly
 # name | other English spellings | Bangla names | lat | lng | "c" = whole city/district (coarse)
 # Coordinates are the middle of the neighbourhood/town — good to about a kilometre. The admin
@@ -449,7 +535,7 @@ def _km(lat1, lng1, lat2, lng2):
     return 12742 * asin(sqrt(h))
 
 
-def build_rows(items, geocoder, max_age_days, expiry_days, now=None):
+def build_rows(items, geocoder, max_age_days, expiry_days, now=None, translator=None):
     """Turn feed items into rows ready for the risk_areas table. Returns (rows, stats)."""
     now = now or dt.datetime.now(dt.timezone.utc)
     stats = {"seen": 0, "too_old": 0, "not_incident": 0, "no_place": 0, "duplicate": 0, "kept": 0}
@@ -482,9 +568,14 @@ def build_rows(items, geocoder, max_age_days, expiry_days, now=None):
                 continue
             seen_keys.add(key)
             many = len(locs) > 1
+            title_en, original = it["title"], None
+            if BN_CHARS.search(title_en):                       # Bangla headline -> English (the boss reads English/Chinese)
+                original = it["title"]
+                title_en = (translator.title(original) if translator else None) or describe_bn(it["title"], it["summary"], loc["place_text"])
             slug = re.sub(r"[^a-z0-9]+", "-", loc["place_text"].split(" (")[0].lower()).strip("-")
             rows.append({
-                "title": ((loc["place_text"].split(" (")[0] + ": ") if many else "") + it["title"][:180],
+                "title": ((loc["place_text"].split(" (")[0] + ": ") if many else "") + title_en[:180],
+                "title_original": original[:400] if original else None,
                 "type": c["type"], "severity": c["severity"],
                 "lat": round(loc["lat"], 6), "lng": round(loc["lng"], 6), "radius_m": loc["radius_m"],
                 "source": "news", "source_url": it["link"] + ("#" + slug if many else ""),
@@ -546,7 +637,8 @@ def main(argv=None):
             failed.append(url)
             log(f"FAIL  {url[:100]}  ({type(e).__name__}: {e})")
 
-    rows, stats = build_rows(items, Geocoder(), max_age, expiry)
+    rows, stats = build_rows(items, Geocoder(), max_age, expiry,
+                             translator=Translator(email=os.environ.get("MYMEMORY_EMAIL")))
     log(f"\nFeeds ok: {ok}, failed: {len(failed)}   |   {stats}")
 
     if args.dry_run:

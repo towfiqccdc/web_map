@@ -71,3 +71,10 @@ It then runs by itself every day at 06:30 Bangladesh time.
 ## TEST MODE: Admin without a password (temporary)
 - `ADMIN_OPEN: true` in `js/config.js` opens 🔒 Admin with no sign-in, and `supabase/open_admin_for_testing.sql` lets anyone change risk areas and emergency services. **Anyone with the site link can then add, change or delete data**, so use it for testing only.
 - To lock again: set `ADMIN_OPEN: false` in `js/config.js` and run `supabase/lock_admin.sql` in the Supabase SQL Editor (or ask Claude to run it).
+
+## Reviewing news in Admin
+- Each news item in the list has a **↗ news** link beside its title. Tap it to read the original report.
+- Tapping an item (or its orange marker on the map) selects it and opens the **Review this report** form in a second side panel next to the list, so you never scroll down and back up. Tapping a marker also scrolls the list to that item. On a phone the form slides up from the bottom.
+- **Bangla titles are translated to English automatically** by the daily job (free MyMemory service). If a translation fails or the free quota is used up, the job writes an English summary such as "Bus set on fire — Sarail (Bangla report)". The Bangla original is always kept and shown as "Original: …".
+- Optional: add a GitHub secret `MYMEMORY_EMAIL` to raise the free translation quota. Only add an email you are happy to share with that service.
+- After merging this change, run the supabase `title_original` column line in `supabase/schema.sql` once (already applied to your project).

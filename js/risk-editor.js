@@ -22,10 +22,24 @@
   function $(id) { return document.getElementById(id); }
   function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[c]; }); }
   function safeUrl(u) { return /^https?:\/\//i.test(u || '') ? u : ''; }
-  function show(el, on) { (typeof el === 'string' ? $(el) : el).classList.toggle('hidden', !on); }
+  function show(el, on) {
+    var node = typeof el === 'string' ? $(el) : el;
+    node.classList.toggle('hidden', !on);
+    if (node.id === 'apEditor' || node.id === 'svcEditor') syncSide();
+  }
+  // the editor lives in its own panel beside the list, so the list never moves
+  function syncSide() {
+    var side = $('adminSide');
+    if (!side) return;
+    var on = !$('apEditor').classList.contains('hidden') || !$('svcEditor').classList.contains('hidden');
+    side.classList.toggle('hidden', !on);
+    document.body.classList.toggle('admin-side-open', on);
+  }
   function isoDate(d) { return d.toISOString().slice(0, 10); }
   function addDays(n) { return new Date(Date.now() + n * 86400000); }
-  function say(msg, kind) { var m = $('apMsg'); m.className = 'ap-msg' + (kind ? ' ' + kind : ''); m.textContent = msg || ''; }
+  function say(msg, kind) {
+    ['apMsg', 'sideMsg'].forEach(function (id) { var m = $(id); if (m) { m.className = 'ap-msg' + (kind ? ' ' + kind : ''); m.textContent = msg || ''; } });
+  }
 
   // ---------- build the panel (once) ------------------------------------
   function build() {
@@ -56,16 +70,16 @@
           '<button id="svcNew" class="btn blue" type="button">+ Add an emergency service</button>' +
           '<input id="svcFind" type="search" placeholder="Search by name…" style="margin-top:8px">' +
           '<div id="svcList"></div>' +
-          '<div id="svcEditor" class="ap-editor hidden">' +
-            '<b id="svcEdTitle">Service</b>' +
-            '<label for="sName">Name</label><input id="sName" maxlength="150" placeholder="e.g. Narsingdi Sadar Hospital">' +
-            '<div class="ap-row"><div><label for="sType">Type</label><select id="sType"><option value="hospital">Hospital</option><option value="police">Police</option><option value="fire">Fire station</option><option value="fuel">Fuel station</option></select></div>' +
-            '<div><label for="sIcon">Icon</label><select id="sIcon"></select></div></div>' +
-            '<label for="sPhone">Phone (optional)</label><input id="sPhone" type="tel" maxlength="30" placeholder="e.g. 01712345678">' +
-            '<div class="ap-hint">📍 <span id="sLoc">Tap the map to choose the place (drag the pin to adjust)</span></div>' +
-            '<div class="ap-actions" id="svcActions"></div>' +
-          '</div>' +
         '</div>' +
+      '</div>' +
+      '<div id="apMsg" class="ap-msg"></div>';
+    document.body.appendChild(el);
+
+    var side = document.createElement('section');
+    side.id = 'adminSide';
+    side.className = 'admin-side panel hidden';
+    side.innerHTML =
+      '<div class="heading"><b id="sideTitle">Details</b><button id="sideClose" class="round" type="button" aria-label="Close details">×</button></div>' +
         '<div id="apEditor" class="ap-editor hidden">' +
           '<b id="apEdTitle">Edit</b>' +
           '<label for="fTitle">What happened, and where</label><input id="fTitle" maxlength="200" placeholder="e.g. Hijack gang active at night near Madhabdi">' +
@@ -76,11 +90,21 @@
           '<label for="fHappened">Date it happened</label><input id="fHappened" type="date">' +
           '<div class="ap-hint">📍 <span id="fLoc">Tap the map to choose the place (drag the pin to adjust)</span></div>' +
           '<div class="ap-hint" id="fSource"></div>' +
+          '<div class="ap-hint ap-orig" id="fOrig"></div>' +
           '<div class="ap-actions" id="apActions"></div>' +
         '</div>' +
-      '</div>' +
-      '<div id="apMsg" class="ap-msg"></div>';
-    document.body.appendChild(el);
+          '<div id="svcEditor" class="ap-editor hidden">' +
+            '<b id="svcEdTitle">Service</b>' +
+            '<label for="sName">Name</label><input id="sName" maxlength="150" placeholder="e.g. Narsingdi Sadar Hospital">' +
+            '<div class="ap-row"><div><label for="sType">Type</label><select id="sType"><option value="hospital">Hospital</option><option value="police">Police</option><option value="fire">Fire station</option><option value="fuel">Fuel station</option></select></div>' +
+            '<div><label for="sIcon">Icon</label><select id="sIcon"></select></div></div>' +
+            '<label for="sPhone">Phone (optional)</label><input id="sPhone" type="tel" maxlength="30" placeholder="e.g. 01712345678">' +
+            '<div class="ap-hint">📍 <span id="sLoc">Tap the map to choose the place (drag the pin to adjust)</span></div>' +
+            '<div class="ap-actions" id="svcActions"></div>' +
+          '</div>' +
+      '<div id="sideMsg" class="ap-msg"></div>';
+    document.body.appendChild(side);
+    $('sideClose').onclick = closeSide;
 
     $('apClose').onclick = close;
     $('apSignIn').onclick = signIn;
@@ -95,6 +119,19 @@
       if ($('adminPanel').classList.contains('hidden')) return;
       if ((tab === 'svc' && svcCurrent) || current) setPoint([e.latlng.lat, e.latlng.lng]);
     });
+  }
+
+  // × on the side panel: back to the list
+  function closeSide() {
+    current = null; svcCurrent = null;
+    show('apEditor', false); show('svcEditor', false);
+    clearEditorMap(); say('');
+    renderList(); renderServices(); drawPending();
+  }
+
+  function scrollToSelected(box) {
+    var sel = box && box.querySelector('.ap-item.sel');
+    if (sel && sel.scrollIntoView) sel.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }
 
   // ---------- open / close / sign in ---------------------------------------
@@ -209,10 +246,11 @@
       });
       return;
     }
-    if (tab !== 'pending') return;
-    rows.filter(function (r) { return r.status === 'pending'; }).forEach(function (r) {
-      L.circleMarker([r.lat, r.lng], { radius: 9, color: '#fff', weight: 2, fillColor: '#f79009', fillOpacity: 1 })
-        .on('click', function () { edit(r); }).bindTooltip('Pending: ' + r.title).addTo(pendingLayer);
+    if (tab !== 'pending' && tab !== 'active') return;
+    rows.filter(function (r) { return tab === 'pending' ? r.status === 'pending' : isActive(r); }).forEach(function (r) {
+      var fill = tab === 'pending' ? '#f79009' : (COLORS[r.severity] || COLORS[2]);
+      L.circleMarker([r.lat, r.lng], { radius: 9, color: '#fff', weight: 2, fillColor: fill, fillOpacity: 1 })
+        .on('click', function () { edit(r); }).bindTooltip((tab === 'pending' ? 'Pending: ' : '') + r.title).addTo(pendingLayer);
     });
   }
 
@@ -232,18 +270,31 @@
 
   function renderList() {
     var box = $('apList');
-    if (tab === 'new' || tab === 'svc') { box.innerHTML = ''; return; }
+    if (tab === 'svc') { box.innerHTML = ''; return; }
+    if (tab === 'new') {
+      box.innerHTML = '<button id="apNewBtn" class="btn blue" type="button">+ Add a risk area</button>' +
+        '<div class="ap-empty">Fill in the form that opens beside this panel, then tap the map to place it.</div>';
+      $('apNewBtn').onclick = newManual;
+      return;
+    }
     var items = rows.filter(function (r) { return tab === 'pending' ? r.status === 'pending' : isActive(r); });
     if (!items.length) { box.innerHTML = '<div class="ap-empty">' + (tab === 'pending' ? 'Nothing waiting for approval.' : 'No active risk areas.') + '</div>'; return; }
     box.innerHTML = items.map(function (r) {
+      var src = safeUrl(r.source_url);
       return '<div class="ap-item' + (current && current.id === r.id ? ' sel' : '') + '" data-id="' + esc(r.id) + '">' +
-        '<span class="pill ' + esc(r.source) + '">' + esc(r.source) + '</span><span class="pill">' + esc(r.type) + ' · sev ' + esc(r.severity) + '</span><br>' +
-        '<b>' + esc(r.title) + '</b>' +
-        '<small>' + (r.place_text ? 'Matched place: ' + esc(r.place_text) + ' · ' : '') + esc((r.happened_on || r.created_at || '').slice(0, 10)) + '</small></div>';
+        '<span class="pill ' + esc(r.source) + '">' + esc(r.source) + '</span><span class="pill">' + esc(r.type) + ' · sev ' + esc(r.severity) + '</span>' +
+        '<div class="ap-titlerow"><b>' + esc(r.title) + '</b>' +
+        (src ? '<a class="ap-link" href="' + esc(src) + '" target="_blank" rel="noopener noreferrer" title="Open the news report">↗ news</a>' : '') + '</div>' +
+        '<small>' + (r.place_text ? 'Matched place: ' + esc(r.place_text) + ' · ' : '') + esc((r.happened_on || r.created_at || '').slice(0, 10)) + '</small>' +
+        (r.title_original ? '<small class="ap-orig">Original: ' + esc(r.title_original) + '</small>' : '') + '</div>';
     }).join('');
     box.querySelectorAll('.ap-item').forEach(function (el) {
-      el.onclick = function () { edit(rows.filter(function (r) { return r.id === el.dataset.id; })[0]); };
+      el.onclick = function (ev) {
+        if (ev.target.closest('a')) return;                       // the news link opens the news, not the editor
+        edit(rows.filter(function (r) { return r.id === el.dataset.id; })[0]);
+      };
     });
+    scrollToSelected(box);
   }
 
   // ---------- editor ---------------------------------------------------------------------
@@ -256,6 +307,7 @@
     $('fExpires').value = r.expires_at ? r.expires_at.slice(0, 10) : '';
     var src = safeUrl(r.source_url);
     $('fSource').innerHTML = src ? 'Source: <a href="' + esc(src) + '" target="_blank" rel="noopener noreferrer">open the news report</a> — check the place before approving.' : '';
+    $('fOrig').textContent = r.title_original ? 'Original headline: ' + r.title_original : '';
     say('');
   }
 
@@ -267,7 +319,7 @@
 
   function edit(r) {
     current = r; show('apEditor', true);
-    $('apEdTitle').textContent = r.status === 'pending' ? 'Review this report' : 'Edit active risk';
+    $('sideTitle').textContent = $('apEdTitle').textContent = r.status === 'pending' ? 'Review this report' : 'Edit active risk';
     fill(r); clearEditorMap(); setPoint([r.lat, r.lng], true);
     buttons(r.status === 'pending'
       ? [['approve', 'ok', 'Approve'], ['reject', 'bad', 'Reject']]
@@ -277,7 +329,7 @@
 
   function newManual() {
     current = {}; show('apEditor', true);
-    $('apEdTitle').textContent = 'Add a risk area';
+    $('sideTitle').textContent = $('apEdTitle').textContent = 'Add a risk area';
     fill({ severity: 2, radius_m: 2000, happened_on: isoDate(new Date()), expires_at: addDays(90).toISOString() });
     clearEditorMap();
     buttons([['create', 'ok', 'Add (goes live now)']]);
@@ -297,7 +349,6 @@
     $('apTabs').querySelectorAll('button').forEach(function (b) { b.classList.toggle('active', b.dataset.t === t); });
     current = null; svcCurrent = null; show('apEditor', false); svcEditing(false); clearEditorMap();
     show('svcBox', t === 'svc');
-    if (t === 'new') newManual();
     if (t === 'svc') { say(''); loadServices(); }
     renderList(); drawPending();
   }
@@ -332,7 +383,6 @@
       if (r.error) { say(r.error.message, 'err'); return; }
       var wasNew = name === 'create';
       current = null; show('apEditor', false); clearEditorMap();
-      if (wasNew) newManual();                    // ready for the next one
       loadRows().then(function () { say('Saved ✓', 'good'); });
       if (window.PlannerAPI) window.PlannerAPI.reloadRisks();   // the public map updates at once
     });
@@ -363,6 +413,7 @@
     box.querySelectorAll('.ap-item').forEach(function (el) {
       el.onclick = function () { editService(svcRows.filter(function (r) { return r.id === el.dataset.id; })[0]); };
     });
+    scrollToSelected(box);
   }
 
   function svcButtons(list) {
@@ -377,20 +428,17 @@
     $('sLoc').textContent = r.lat ? r.lat.toFixed(5) + ', ' + r.lng.toFixed(5) : 'Tap the map to choose the place (drag the pin to adjust)';
   }
 
-  // while editing one service, hide the long list so the form is right there (important on phones)
-  function svcEditing(on) {
-    show('svcEditor', on); show('svcList', !on); show('svcFind', !on); show('svcNew', !on);
-  }
+  function svcEditing(on) { show('svcEditor', on); }
 
   function newService() {
-    svcCurrent = {}; svcEditing(true); $('svcEdTitle').textContent = 'Add an emergency service';
+    svcCurrent = {}; svcEditing(true); $('sideTitle').textContent = $('svcEdTitle').textContent = 'Add an emergency service';
     fillService({}); clearEditorMap(); renderServices();
     svcButtons([['create', 'ok', 'Add service'], ['cancel', '', 'Cancel']]);
     say('Tap the map where it is.');
   }
 
   function editService(r) {
-    svcCurrent = r; svcEditing(true); $('svcEdTitle').textContent = 'Edit service';
+    svcCurrent = r; svcEditing(true); $('sideTitle').textContent = $('svcEdTitle').textContent = 'Edit service';
     fillService(r); clearEditorMap(); setPoint([r.lat, r.lng], true); renderServices();
     svcButtons([['save', 'blue', 'Save changes'], ['cancel', '', 'Cancel'], ['delete', 'bad', 'Delete']]);
     say('');
@@ -418,7 +466,6 @@
       if (r.error) { say(r.error.message, 'err'); return; }
       var wasNew = name === 'create';
       svcCurrent = null; svcEditing(false); clearEditorMap();
-      if (wasNew) newService();
       loadServices().then(function () { say('Saved ✓', 'good'); });
       if (window.ServiceStore) window.ServiceStore.reload();      // the public map updates at once
     });
