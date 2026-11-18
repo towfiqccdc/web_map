@@ -103,14 +103,16 @@
   function track() {
     if (!navigator.geolocation) return;
     navigator.geolocation.watchPosition(function (p) {
-      if (window.userPicked) return;                     // they set the spot by hand: respect that
       var ll = [p.coords.latitude, p.coords.longitude], acc = p.coords.accuracy || 0;
+      if (window.userPicked) {
+        // a spot set by hand holds against vague fixes; a real GPS fix (<=100 m) elsewhere replaces it
+        if (!(acc > 0 && acc <= 100) || !userLocation || dist(userLocation, ll) * 1000 < 150) return;
+      }
       var moved = userLocation ? dist(userLocation, ll) * 1000 : Infinity;
       // a vaguer fix for the same place (e.g. Wi-Fi/IP guess after a GPS fix) must not replace a better one
-      if (userLocation && userAccuracy && acc > userAccuracy * 1.5 && moved <= acc) return;   // our good fix lies inside the vague circle
+      if (userLocation && userAccuracy && acc > userAccuracy * 1.5 && moved <= acc) return;
       if (userLocation && moved < MOVE_M && acc >= (userAccuracy || Infinity)) return;
-      setUserLocation(ll, null, acc);                     // moves the blue dot, does not move the map
-      locStatus(acc);
+      acceptFix(ll, acc, null);                           // moves the blue dot, does not move the map
       if (window.renderList) window.renderList();         // also redraws the pins
     }, function () { /* location off: nothing to do */ }, { enableHighAccuracy: true, maximumAge: 0, timeout: 30000 });
   }

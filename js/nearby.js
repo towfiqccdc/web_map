@@ -81,8 +81,8 @@
     $('nbToggle').onclick = function () { expanded = !expanded; if (expanded && !currentFilter) currentFilter = 'all'; renderList(); };
     $('nbHead').querySelector('.nb-title').onclick = function () { $('nbToggle').click(); };
     $('nbMore').onclick = function () { showAll = !showAll; renderList(); };
-    $('nbRefresh').onclick = function () { window.userPicked = false; locateUser(); };
-    $('locateBtn').addEventListener('click', function () { window.userPicked = false; });
+    $('nbRefresh').onclick = function () { forgetSpot(); locateUser(); };
+    $('locateBtn').addEventListener('click', function () { forgetSpot(); });
 
     $('serviceList').addEventListener('click', function (ev) {
       var btn = ev.target.closest('[data-act="route"]');
@@ -101,8 +101,9 @@
     };
     map.on('click', function (e) {
       if (!picking) return;
-      picking = false; window.userPicked = true;
+      picking = false;
       $('pickLocBtn').textContent = 'Or tap the map to set where you are';
+      window.userPicked = true; saveSpot([e.latlng.lat, e.latlng.lng]);
       setUserLocation([e.latlng.lat, e.latlng.lng], null);
       $('locationStatus').textContent = 'Using the spot you tapped';
       renderList();
