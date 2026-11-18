@@ -2,7 +2,7 @@
 // Emergency services (hospital / police / fire / fuel).
 //  * Loads the list from the database (admins edit it in 🔒 Admin → Services);
 //    falls back to the last saved copy, then to js/data.js.
-//  * The map does NOT show them all. Hospitals and police appear only when YOU are within
+//  * The map does NOT show them all. Hospitals, police and the built-in risk spots (blackspots, crime-prone, military) appear only when YOU are within
 //    a few km of them (zoom does not matter). Fire and fuel appear only when you pick
 //    them in the "Nearby help" panel. Travel away and the pins change with you.
 // Uses globals from app.js: map, layers, markers, ICON, LABEL, icon(), esc(), dist().
@@ -14,7 +14,8 @@
   var CACHE_KEY = 'emergency_services_cache_v1';
   var COLUMNS = 'id,type,name,lat,lng,phone,icon';
   var TYPES = ['hospital', 'police', 'fire', 'fuel'];
-  var NEAR_KM = 5;                             // hospital / police pins appear when you are this close (straight line)
+  var RISK_TYPES = ['accident', 'crime', 'military'];
+  var NEAR_KM = 5;                             // hospital / police / risk pins appear when you are this close (straight line)
   var PICKED_COUNT = 3;                        // fire / fuel: the nearest few, only while chosen in the Nearby help panel
   var MOVE_M = 50;                             // re-check when you have moved this far
 
@@ -46,8 +47,11 @@
   //  - fire / fuel are drawn only while chosen in "Nearby help" (nearest few)
   function update() {
     if (typeof map === 'undefined' || typeof layers === 'undefined') return;
-    TYPES.forEach(function (t) { layers[t].clearLayers(); });
+    TYPES.concat(RISK_TYPES).forEach(function (t) { layers[t].clearLayers(); });
     if (!userLocation) return;
+    RISK_LOCATIONS.forEach(function (x) {                 // blackspots, crime-prone and military areas: same rule
+      if (markers[x.id] && layers[x.type] && dist(userLocation, [x.lat, x.lng]) <= NEAR_KM) layers[x.type].addLayer(markers[x.id]);
+    });
     var picked = window.nearbyPickedType && window.nearbyPickedType();
     TYPES.forEach(function (t) {
       var always = t === 'hospital' || t === 'police';
