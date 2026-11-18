@@ -28,7 +28,7 @@
     var e = estimate(x.d);
     var phone = safePhone(x.phone);
     return '<article class="svc" data-id="' + esc(x.id) + '">' +
-      '<div class="svc-ico t-' + esc(x.type) + '">' + ICON[x.type] + '</div>' +
+      '<div class="svc-ico t-' + esc(x.type) + '">' + esc(window.serviceIcon ? window.serviceIcon(x) : ICON[x.type]) + '</div>' +
       '<div class="svc-main"><b>' + esc(x.name) + '</b>' +
       '<small>' + esc(LABEL[x.type]) + ' · ≈ ' + fmtKm(e.km) + ' · ~' + fmtMin(e.min) + '</small></div>' +
       '<div class="svc-act">' +
@@ -48,6 +48,8 @@
   }
 
   // (re)draws everything in the panel; app.js calls this after the location changes
+  window.nearbyPickedType = function () { return expanded ? currentFilter : null; };
+
   window.renderList = function () {
     var has = !!userLocation;
     $('nbLocate').classList.toggle('hidden', has);
@@ -58,6 +60,7 @@
     $('nearby').classList.toggle('open', has && expanded);
     document.body.classList.toggle('nb-open', has && expanded);
     updateQuick();
+    if (window.updateServiceMarkers) window.updateServiceMarkers();
     if (!has || !expanded) return;
 
     var all = currentFilter === 'all' ? nearest() : nearest([currentFilter]);
@@ -86,8 +89,7 @@
       if (ev.target.closest('a')) return;                 // Navigate / Call links work normally
       var c = ev.target.closest('.svc');
       if (!c) return;
-      var s = EMERGENCY_SERVICES.filter(function (x) { return x.id === c.dataset.id; })[0];
-      if (s) { map.setView([s.lat, s.lng], 15); if (markers[s.id]) markers[s.id].openPopup(); }
+      if (window.focusService) window.focusService(c.dataset.id);
     });
 
     // "tap the map to say where you are" — for phones with location switched off
