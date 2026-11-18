@@ -102,15 +102,17 @@
   // follow the person while they travel, so pins and the Nearby list stay current
   function track() {
     if (!navigator.geolocation) return;
-    var last = null;
     navigator.geolocation.watchPosition(function (p) {
-      if (window.userPicked) return;                     // they tapped a spot on the map: respect that
-      var ll = [p.coords.latitude, p.coords.longitude];
-      if (last && dist(last, ll) * 1000 < MOVE_M) return;
-      last = ll;
-      setUserLocation(ll);                                // moves the blue dot, does not move the map
+      if (window.userPicked) return;                     // they set the spot by hand: respect that
+      var ll = [p.coords.latitude, p.coords.longitude], acc = p.coords.accuracy || 0;
+      var moved = userLocation ? dist(userLocation, ll) * 1000 : Infinity;
+      // a vaguer fix for the same place (e.g. Wi-Fi/IP guess after a GPS fix) must not replace a better one
+      if (userLocation && userAccuracy && acc > userAccuracy * 1.5 && moved <= acc) return;   // our good fix lies inside the vague circle
+      if (userLocation && moved < MOVE_M && acc >= (userAccuracy || Infinity)) return;
+      setUserLocation(ll, null, acc);                     // moves the blue dot, does not move the map
+      locStatus(acc);
       if (window.renderList) window.renderList();         // also redraws the pins
-    }, function () { /* location off: nothing to do */ }, { enableHighAccuracy: true, maximumAge: 15000, timeout: 20000 });
+    }, function () { /* location off: nothing to do */ }, { enableHighAccuracy: true, maximumAge: 0, timeout: 30000 });
   }
 
   document.addEventListener('DOMContentLoaded', function () {
