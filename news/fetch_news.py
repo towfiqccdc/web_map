@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Daily news job: find road accidents / road violence in English Bangladeshi news
+Daily news job: find road accidents, road violence and street security incidents
+(cocktail blasts, vehicle arson, road blockades, hijack...) in English AND Bangla news
 and add them to Supabase as PENDING risk areas for you to approve on the map (Admin button).
 
 Nothing found here ever affects a route until you approve it.
@@ -39,7 +40,8 @@ MAX_GEOCODES_PER_RUN = 60
 ROAD_CONTEXT = re.compile(
     r"\b(road|roads|highway|expressway|bypass|flyover|bridge|intersection|crossing|"
     r"bus|buses|truck|lorry|covered van|pickup|microbus|ambulance|cng|auto-?rickshaw|"
-    r"easy bike|motorcycle|motorbike|bike|rickshaw|car|train|hit-and-run)\b", re.I)
+    r"easy bike|motorcycle|motorbike|bike|rickshaw|car|train|hit-and-run|vehicle|vehicles|commuters|"
+    r"passengers|traffic|railway|rail line)\b", re.I)
 
 ACCIDENT = re.compile(
     r"\b(accident|crash|crashed|collision|collided|collide|run over|ran over|hit-and-run|"
@@ -49,14 +51,23 @@ ACCIDENT = re.compile(
 VIOLENCE = re.compile(
     r"\b(hijack|hijacked|highway robbery|robbery|robbers|robbed|mugging|mugged|dacoit|"
     r"dacoity|bandits?|extortion|mob|clash|clashes|ambush|ambushed|attack|attacked|"
-    r"arson|torched|set fire|vandali[sz]ed|stabbed|shot dead|gunfight|crude bombs?)\b", re.I)
+    r"arson|torched|set fire|set on fire|set ablaze|ablaze|vandali[sz]ed|vandalism|stone-?pelting|pelted|"
+    r"stabbed|shot dead|gunfight|crude bombs?|cocktails?|petrol bombs?)\b", re.I)
+
+# Security incidents that matter even when the text has no road word ("cocktail blast in Mohammadpur")
+SECURITY_STRONG = re.compile(
+    r"\b(cocktails?|crude bombs?|petrol bombs?|bombs?|blasts?|explosions?|exploded|detonated|"
+    r"road ?blocks?|roadblock|blockade[sd]?|barricad(?:e|es|ed|ing))\b", re.I)
+# ...but not gas / boiler / factory explosions, or blasts abroad-style wording
+NOT_SECURITY = re.compile(r"\b(gas|cylinder|boiler|furnace|stove|cooker|mill|factory|garment|chemical|mine|quarry|"
+                          r"firecracker|fireworks|cracker|film|movie|serial)\b", re.I)
 
 CRASH_WORDS = re.compile(r"\b(crash|crashed|collision|collided|run over|ran over|hit-and-run|overturn|overturned|rammed|mowed down)\b", re.I)
 
 NOT_AN_INCIDENT = re.compile(
     r"\b(road safety (week|day|movement)|awareness|campaign|statistics|survey|annual report|"
     r"monthly report|according to a report|report says|report shows|death toll rises to \d{3,}|"
-    r"seminar|webinar|workshop|opinion|editorial)\b", re.I)
+    r"seminar|webinar|workshop|opinion|editorial|verdict|sentenced|death sentence|charge[- ]?sheet|trial begins|hearing)\b", re.I)
 
 NUMBER_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
                 "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12}
@@ -76,6 +87,110 @@ DISTRICTS = [
     "Pirojpur", "Rajbari", "Rajshahi", "Rangamati", "Rangpur", "Satkhira", "Shariatpur",
     "Sherpur", "Sirajganj", "Sunamganj", "Sylhet", "Tangail", "Thakurgaon",
 ]
+
+# ------------------------------------------------------------------ Bangla keywords
+# Bangla vowel signs are not "word" characters for Python's \b, so Bangla is matched as plain text.
+BN_CHARS = re.compile(r"[ঀ-৿]")
+BN_DIGITS = str.maketrans("০১২৩৪৫৬৭৮৯", "0123456789")
+BN_NUMBER_WORDS = {"এক": 1, "দুই": 2, "দুজন": 2, "তিন": 3, "চার": 4, "পাঁচ": 5, "ছয়": 6, "সাত": 7, "আট": 8, "নয়": 9, "দশ": 10}
+BN_STRONG = ("ককটেল", "ক্রুড বোমা", "বোমা", "বিস্ফোরণ", "সড়ক অবরোধ", "মহাসড়ক অবরোধ", "সড়ক অবরুদ্ধ",
+             "মহাসড়ক অবরুদ্ধ", "রাস্তা অবরোধ", "ব্লকেড", "সড়কে অবরোধ")
+BN_VEHICLE = ("বাস", "ট্রাক", "লরি", "গাড়ি", "গাড়ী", "কভার্ড ভ্যান", "পিকআপ", "অটোরিকশা", "অটোরিক্সা", "সিএনজি", "মোটরসাইকেল",
+              "রিকশা", "ট্রেন", "সড়ক", "মহাসড়ক", "সেতু", "ফ্লাইওভার", "মোড়", "যানবাহন", "অ্যাম্বুলেন্স")
+BN_FIRE = ("আগুন", "অগ্নিসংযোগ", "পুড়িয়ে", "ভাঙচুর", "ইটপাটকেল")
+BN_VIOLENCE = ("ডাকাতি", "ছিনতাই", "হামলা", "সংঘর্ষ", "গুলি", "ছুরিকাঘাত", "চাঁদাবাজি", "হাইজ্যাক", "ককটেল")
+BN_ACCIDENT = ("দুর্ঘটনা", "নিহত", "চাপা", "উল্টে", "ধাক্কা", "আহত", "মুখোমুখি")
+BN_CRASH = ("দুর্ঘটনা", "চাপা", "উল্টে", "ধাক্কা", "মুখোমুখি")
+BN_NOT_INCIDENT = ("মামলার রায়", "রায় ঘোষণা", "দণ্ডাদেশ", "সাজা", "সেমিনার", "কর্মশালা", "সচেতনতা", "সম্পাদকীয়", "মতামত", "প্রতিবেদন প্রকাশ")
+BN_NOT_SECURITY = ("গ্যাস", "সিলিন্ডার", "বয়লার", "কারখানা", "চুলা", "আতশবাজি", "সিনেমা")
+BN_DEATHS = re.compile(r"([০-৯0-9]+|" + "|".join(BN_NUMBER_WORDS) + r")\s*(?:জন|জনের)?\s*(?:নিহত|মারা|মৃত্যু)")
+
+# ------------------------------------------------------------------ places we know exactly
+# name | other English spellings | Bangla names | lat | lng | "c" = whole city/district (coarse)
+# Coordinates are the middle of the neighbourhood/town — good to about a kilometre. The admin
+# can drag the pin when reviewing. Focus: Dhaka (head office), Sylhet and Brahmanbaria
+# (project areas) and the highways between them.
+GAZETTEER_TEXT = """
+Mirpur|Mirpur-10|মিরপুর|23.8069|90.3687
+Pallabi||পল্লবী|23.8250|90.3640
+Mohakhali|Mahakhali|মহাখালী|23.7781|90.4005
+Badda||বাড্ডা|23.7806|90.4262
+Rampura||রামপুরা|23.7622|90.4222
+Mohammadpur||মোহাম্মদপুর|23.7662|90.3586
+Jatrabari||যাত্রাবাড়ী|23.7104|90.4344
+Shyamoli||শ্যামলী|23.7743|90.3655
+Tejgaon||তেজগাঁও|23.7590|90.3925
+Uttara||উত্তরা|23.8759|90.3795
+Gulshan||গুলশান|23.7925|90.4078
+Banani||বনানী|23.7937|90.4066
+Motijheel||মতিঝিল|23.7330|90.4172
+Paltan||পল্টন|23.7340|90.4120
+Shahbagh||শাহবাগ|23.7389|90.3958
+Farmgate||ফার্মগেট|23.7571|90.3897
+Karwan Bazar|Kawran Bazar|কারওয়ান বাজার|23.7510|90.3925
+Malibagh||মালিবাগ|23.7508|90.4122
+Moghbazar||মগবাজার|23.7480|90.4050
+Khilgaon||খিলগাঁও|23.7476|90.4290
+Demra||ডেমরা|23.7160|90.4770
+Gabtoli|Gabtali|গাবতলী|23.7786|90.3434
+Savar||সাভার|23.8583|90.2667
+Ashulia||আশুলিয়া|23.8981|90.2733
+Tongi||টঙ্গী|23.8918|90.4058
+Kuril||কুড়িল|23.8206|90.4210
+Khilkhet||খিলক্ষেত|23.8290|90.4220
+Bashundhara||বসুন্ধরা|23.8137|90.4311
+Dhanmondi||ধানমন্ডি|23.7461|90.3742
+Science Lab||সায়েন্স ল্যাব|23.7391|90.3836
+Azimpur||আজিমপুর|23.7285|90.3866
+Sayedabad||সায়েদাবাদ|23.7092|90.4250
+Kamalapur||কমলাপুর|23.7273|90.4261
+Sadarghat||সদরঘাট|23.7089|90.4073
+Gulistan||গুলিস্তান|23.7250|90.4120
+Postogola||পোস্তগোলা|23.7027|90.4390
+Mugda||মুগদা|23.7314|90.4331
+Kakrail||কাকরাইল|23.7387|90.4094
+Banglamotor||বাংলামোটর|23.7459|90.3935
+Hatirjheel||হাতিরঝিল|23.7500|90.4000
+Kamrangirchar||কামরাঙ্গীরচর|23.7116|90.3669
+Lalbagh||লালবাগ|23.7189|90.3881
+Basabo||বাসাবো|23.7413|90.4326
+Cantonment||ক্যান্টনমেন্ট|23.8244|90.4056
+Old Dhaka|Puran Dhaka|পুরান ঢাকা|23.7104|90.4074
+Madhabdi||মাধবদী|23.8583|90.6677
+Joydebpur|Joydevpur|জয়দেবপুর|24.0000|90.4200
+Ashuganj||আশুগঞ্জ|24.0382|91.0009
+Sarail||সরাইল|24.0735|91.1148
+Bhairab||ভৈরব|24.0522|90.9764
+Akhaura||আখাউড়া|23.8664|91.2000
+Dhaka|the capital;capital city;Dhaka city|ঢাকা;রাজধানী;রাজধানীর|23.8103|90.4125|c
+Narayanganj||নারায়ণগঞ্জ|23.6238|90.5000|c
+Gazipur||গাজীপুর|23.9999|90.4203|c
+Narsingdi||নরসিংদী|23.9193|90.7176|c
+Sylhet||সিলেট|24.8949|91.8687|c
+Habiganj||হবিগঞ্জ|24.3745|91.4155|c
+Moulvibazar||মৌলভীবাজার|24.4829|91.7774|c
+Sunamganj||সুনামগঞ্জ|25.0715|91.4055|c
+Brahmanbaria||ব্রাহ্মণবাড়িয়া|23.9571|91.1115|c
+Kishoreganj||কিশোরগঞ্জ|24.4260|90.7766|c
+Cumilla|Comilla|কুমিল্লা|23.4607|91.1809|c
+Chattogram|Chittagong|চট্টগ্রাম|22.3569|91.7832|c
+Tangail||টাঙ্গাইল|24.2513|89.9167|c
+"""
+
+
+def _load_gazetteer(text):
+    out = []
+    for line in text.strip().splitlines():
+        parts = line.split("|")
+        name, en_alt, bn = parts[0], parts[1], parts[2]
+        lat, lng, coarse = float(parts[3]), float(parts[4]), len(parts) > 5 and parts[5] == "c"
+        english = [name] + [a for a in re.split(r"[;,]", en_alt) if a]
+        bangla = [b for b in bn.split(";") if b]
+        out.append({"name": name, "lat": lat, "lng": lng, "coarse": coarse, "en": english, "bn": bangla})
+    return out
+
+
+GAZETTEER = _load_gazetteer(GAZETTEER_TEXT)
 
 # Words that start sentences or are not places, so they are never place candidates
 STOP = {"The", "A", "An", "On", "In", "At", "Police", "Bus", "Truck", "Two", "Three", "Four", "Five",
@@ -158,14 +273,46 @@ def parse_feed(xml_bytes):
 
 
 # ------------------------------------------------------------------ classification
+def _has(text, words):
+    return any(w in text for w in words)
+
+
+def classify_bn(text):
+    """Bangla headline/summary -> same result shape as classify()."""
+    if _has(text, BN_NOT_INCIDENT):
+        return None
+    strong = _has(text, BN_STRONG) and not _has(text, BN_NOT_SECURITY)
+    vehicle = _has(text, BN_VEHICLE)
+    fire = _has(text, BN_FIRE) and vehicle                  # "বাসে আগুন": fire only counts when a vehicle/road is named
+    crash = _has(text, BN_CRASH)
+    # "সংঘর্ষ" means both "clash" and "collision": it is violence only when no crash word is present
+    violence = _has(text, tuple(w for w in BN_VIOLENCE if w != "সংঘর্ষ")) or ("সংঘর্ষ" in text and not crash)
+    accident = _has(text, BN_ACCIDENT) or ("সংঘর্ষ" in text and crash)
+    if not (strong or (vehicle and (fire or violence or accident))):
+        return None
+    kind = "violence" if (strong or fire or violence) else "accident"
+    deaths = 0
+    for m in BN_DEATHS.finditer(text):
+        n = m.group(1)
+        v = int(n.translate(BN_DIGITS)) if n.translate(BN_DIGITS).isdigit() else BN_NUMBER_WORDS.get(n, 0)
+        deaths = max(deaths, v)
+    if "নিহত" in text and deaths == 0:
+        deaths = 1
+    severity = 3 if deaths >= 3 else (2 if (deaths >= 1 or kind == "violence") else 1)
+    return {"type": kind, "severity": severity, "deaths": deaths}
+
+
 def classify(title, summary):
-    """Return None if not a road incident, else {type, severity, deaths}."""
+    """Return None if not a road / street-security incident, else {type, severity, deaths}."""
     text = f"{title}. {summary}"
+    if BN_CHARS.search(text):
+        return classify_bn(text)
     if NOT_AN_INCIDENT.search(text):
         return None
-    if not ROAD_CONTEXT.search(text):
+    strong = bool(SECURITY_STRONG.search(text)) and not NOT_SECURITY.search(text)
+    if not strong and not ROAD_CONTEXT.search(text):
         return None
-    has_acc, has_vio = bool(ACCIDENT.search(text)), bool(VIOLENCE.search(text))
+    has_acc, has_vio = bool(ACCIDENT.search(text)), bool(VIOLENCE.search(text)) or strong
     if not (has_acc or has_vio):
         return None
     kind = "accident" if (has_acc and (CRASH_WORDS.search(text) or not has_vio)) else "violence"
@@ -258,6 +405,42 @@ def locate(title, summary, geocoder):
     return None
 
 
+def find_known_places(title, summary, limit=5):
+    """Places from the built-in list (Dhaka areas, Sylhet, Brahmanbaria...), in the order they are
+    mentioned. Neighbourhoods/towns win; the whole city/district is used only if nothing finer is named."""
+    text = f"{title}. {summary}"
+    hits = []
+    for g in GAZETTEER:
+        pos = None
+        for w in g["en"]:
+            m = re.search(r"\b" + re.escape(w) + r"\b", text, re.I)
+            if m and (pos is None or m.start() < pos):
+                pos = m.start()
+        for w in g["bn"]:
+            i = text.find(w)
+            if i >= 0 and (pos is None or i < pos):
+                pos = i
+        if pos is not None:
+            hits.append((pos, g))
+    hits.sort(key=lambda h: h[0])
+    fine = [g for _, g in hits if not g["coarse"]]
+    chosen = fine[:limit] if fine else [g for _, g in hits][:1]
+    return [{"lat": g["lat"], "lng": g["lng"], "known": True,
+             "place_text": g["name"] + (" (whole city/district — check location)" if g["coarse"] else ""),
+             "radius_m": (4000 if g["name"] == "Dhaka" else 8000) if g["coarse"] else 1500} for g in chosen]
+
+
+def locate_many(title, summary, geocoder):
+    """One or more locations for an article. Known places first (no web lookup needed), else the geocoder."""
+    known = find_known_places(title, summary)
+    if known:
+        return known
+    if BN_CHARS.search(f"{title}{summary}"):
+        return []                                    # the map lookup only understands English names
+    one = locate(title, summary, geocoder)
+    return [one] if one else []
+
+
 # ------------------------------------------------------------------ pipeline
 def _km(lat1, lng1, lat2, lng2):
     from math import radians, sin, cos, asin, sqrt
@@ -284,26 +467,36 @@ def build_rows(items, geocoder, max_age_days, expiry_days, now=None):
         if not c:
             stats["not_incident"] += 1
             continue
-        loc = locate(it["title"], it["summary"], geocoder)
-        if not loc:
+        locs = locate_many(it["title"], it["summary"], geocoder)
+        if not locs:
             stats["no_place"] += 1
             log(f"   no place found: {it['title'][:90]}")
             continue
         happened = (it["published"] or now).date().isoformat()
-        key = (loc["place_text"].lower(), happened, c["type"])      # same story from several outlets
-        if key in seen_keys or any(r["type"] == c["type"] and r["happened_on"] == happened and
-                                   _km(r["lat"], r["lng"], loc["lat"], loc["lng"]) < 4 for r in rows):
+        added = 0
+        for loc in locs:
+            key = (loc["place_text"].lower(), happened, c["type"])      # same story from several outlets
+            if key in seen_keys or (not loc.get("known") and any(
+                    r["type"] == c["type"] and r["happened_on"] == happened and
+                    _km(r["lat"], r["lng"], loc["lat"], loc["lng"]) < 4 for r in rows)):
+                continue
+            seen_keys.add(key)
+            many = len(locs) > 1
+            slug = re.sub(r"[^a-z0-9]+", "-", loc["place_text"].split(" (")[0].lower()).strip("-")
+            rows.append({
+                "title": ((loc["place_text"].split(" (")[0] + ": ") if many else "") + it["title"][:180],
+                "type": c["type"], "severity": c["severity"],
+                "lat": round(loc["lat"], 6), "lng": round(loc["lng"], 6), "radius_m": loc["radius_m"],
+                "source": "news", "source_url": it["link"] + ("#" + slug if many else ""),
+                "place_text": loc["place_text"][:120],
+                "status": "pending", "happened_on": happened,
+                "expires_at": (now + dt.timedelta(days=expiry_days)).isoformat(),
+            })
+            added += 1
+        if added:
+            stats["kept"] += added
+        else:
             stats["duplicate"] += 1
-            continue
-        seen_keys.add(key)
-        rows.append({
-            "title": it["title"][:200], "type": c["type"], "severity": c["severity"],
-            "lat": round(loc["lat"], 6), "lng": round(loc["lng"], 6), "radius_m": loc["radius_m"],
-            "source": "news", "source_url": it["link"], "place_text": loc["place_text"][:120],
-            "status": "pending", "happened_on": happened,
-            "expires_at": (now + dt.timedelta(days=expiry_days)).isoformat(),
-        })
-        stats["kept"] += 1
     return rows, stats
 
 

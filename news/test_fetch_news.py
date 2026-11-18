@@ -75,13 +75,67 @@ class Tests(unittest.TestCase):
         self.assertEqual(st, {"seen": 7, "too_old": 1, "not_incident": 2, "no_place": 1, "duplicate": 1, "kept": 2}, st)
         crash = [r for r in rows if r["type"] == "accident"][0]
         self.assertEqual((crash["severity"], crash["status"], crash["source"]), (3, "pending", "news"))
-        self.assertEqual(crash["lat"], 23.8541)
+        self.assertEqual(crash["lat"], 23.8583)      # Madhabdi comes from the built-in place list
         self.assertTrue(crash["expires_at"].startswith("2026-12-17"))
         self.assertEqual([r["type"] for r in rows].count("violence"), 1)
         # every row fits the database rules (see supabase/schema.sql)
         for r in rows:
             self.assertTrue(20.5 <= r["lat"] <= 26.7 and 88 <= r["lng"] <= 92.8)
             self.assertTrue(200 <= r["radius_m"] <= 20000 and 1 <= r["severity"] <= 3 and len(r["title"]) <= 200)
+
+    # ---- security incidents in Dhaka (the two Prothom Alo stories that were being missed) -------
+    def _rows(self, title, summary, link="https://n.example/x"):
+        items = [{"title": title, "link": link, "summary": summary, "published": NOW}]
+        return fn.build_rows(items, fn.Geocoder(sleep=0, fetch=fake_fetch), 2, 30, now=NOW)
+
+    def test_english_cocktail_and_bus_arson_dhaka(self):
+        rows, st = self._rows("Four buses set on fire and cocktail explosions at six places in the capital overnight",
+                              "Buses were torched in Pallabi, Mahakhali, Badda and Rampura. Cocktails exploded in Mohammadpur, Jatrabari and Shyamoli.")
+        self.assertEqual(st["kept"], 5, st)                                   # capped at 5 places per article
+        self.assertEqual({r["type"] for r in rows}, {"violence"})
+        self.assertEqual([r["place_text"] for r in rows][:4], ["Pallabi", "Mohakhali", "Badda", "Rampura"])
+        self.assertEqual(len({r["source_url"] for r in rows}), 5)             # one pending item per place
+        self.assertTrue(all(r["source_url"].startswith("https://n.example/x#") for r in rows))
+
+    def test_bus_set_on_fire_mirpur(self):
+        rows, _ = self._rows("Bus set on fire in Mirpur, 2 detained", "Unidentified people torched a Rajdhani Paribahan bus.")
+        self.assertEqual((rows[0]["type"], rows[0]["place_text"], rows[0]["severity"]), ("violence", "Mirpur", 2))
+        self.assertEqual(rows[0]["source_url"], "https://n.example/x")        # single place: link unchanged
+
+    def test_cocktail_without_road_words_and_roadblock(self):
+        self.assertEqual(fn.classify("Cocktail blast in Mohammadpur", "")["type"], "violence")
+        self.assertEqual(fn.classify("Students block Dhaka-Sylhet highway, Sylhet", "roadblock for hours")["type"], "violence")
+        self.assertIsNone(fn.classify("Gas cylinder explosion in Mirpur kills 2", ""))          # not a security incident
+        self.assertIsNone(fn.classify("Court hears cocktail blast case, verdict next week", ""))
+
+    def test_bangla_headlines(self):
+        rows, st = self._rows("মিরপুরে বাসে আগুন, আটক ২", "রাজধানীর মিরপুর মডেল থানা এলাকায় রাতে রাজধানী পরিবহনের একটি বাসে আগুন দেওয়া হয়েছে।")
+        self.assertEqual((rows[0]["type"], rows[0]["place_text"]), ("violence", "Mirpur"), rows)
+        rows, st = self._rows("রাজধানীর ছয় স্থানে ককটেল বিস্ফোরণ, চার বাসে আগুন", "পল্লবী, মহাখালী, বাড্ডা ও রামপুরায় বাসে আগুন। মোহাম্মদপুর, যাত্রাবাড়ী ও শ্যামলীতে ককটেল বিস্ফোরণ।")
+        self.assertEqual([r["place_text"] for r in rows][:3], ["Pallabi", "Mohakhali", "Badda"], rows)
+        self.assertEqual(st["kept"], 5)
+        rows, st = self._rows("রাজধানীতে ককটেল বিস্ফোরণ", "")                    # only "the capital": whole-city pin to refine
+        self.assertEqual(rows[0]["place_text"], "Dhaka (whole city/district — check location)")
+        self.assertEqual(rows[0]["radius_m"], 4000)
+        rows, st = self._rows("সিলেটে সড়ক দুর্ঘটনায় তিনজন নিহত", "মহাসড়কে বাস-ট্রাকের মুখোমুখি সংঘর্ষে তিনজন নিহত হয়েছেন।")
+        self.assertEqual((rows[0]["type"], rows[0]["severity"]), ("accident", 3), rows)
+        self.assertEqual(fn.classify("ককটেল বিস্ফোরণ মামলার রায় ঘোষণা", ""), None)
+        self.assertEqual(fn.classify("সড়ক নিরাপত্তা সচেতনতা সেমিনার", "বাস ও ট্রাক চালকদের জন্য"), None)
+        self.assertEqual(fn.classify("খেলায় জয়ী দল", "ম্যাচে দুই গোল"), None)
+
+    def test_same_story_from_two_outlets_not_duplicated(self):
+        items = [{"title": "Bus torched in Pallabi", "link": "https://a/1", "summary": "", "published": NOW},
+                 {"title": "Bus set on fire in Pallabi", "link": "https://b/2", "summary": "", "published": NOW}]
+        rows, st = fn.build_rows(items, fn.Geocoder(sleep=0, fetch=fake_fetch), 2, 30, now=NOW)
+        self.assertEqual((len(rows), st["duplicate"]), (1, 1), st)
+
+    def test_nearby_dhaka_areas_from_one_article_are_all_kept(self):
+        rows, _ = self._rows("Cocktails hurled in Pallabi and Mirpur", "")
+        self.assertEqual(len(rows), 2)                                           # 2 km apart is fine inside one article
+
+    def test_unknown_place_falls_back_to_map_lookup(self):
+        rows, _ = self._rows("Robbers hijack bus on Mymensingh highway near Bhaluka", "passengers robbed")
+        self.assertEqual(rows[0]["lat"], 24.4)
 
     def test_geocoder_cache_and_cap(self):
         calls = []
