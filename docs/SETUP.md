@@ -59,3 +59,11 @@ It then runs by itself every day at 06:30 Bangladesh time.
 - Run `supabase/services.sql` once in the Supabase SQL Editor (already done for the current project). It creates the list and copies the starting services from `js/data.js`.
 - Add, rename, re-icon, set a phone for, or delete a service: 🔒 Admin → **Services**. Pick the type and an icon, tap the map for the place, then Add.
 - The public map does not show them all. Hospitals and police appear only when you are within 5 km of them (zoom does not matter); farther ones disappear, and the map follows you as you travel. Fire and fuel pins appear only when picked in the Nearby help panel. The Nearby help list is unchanged. To change the distance, edit `NEAR_KM` in `js/services.js`. If the database is unreachable, the last saved list (or `js/data.js`) is used.
+
+## What the news job looks for
+- Road accidents, highway robbery/hijack, **and street security incidents**: cocktail/crude-bomb blasts, vehicles set on fire, road blockades, clashes and vandalism.
+- **English and Bangla.** Bangla headlines are matched on their own keywords.
+- **Focus areas:** Dhaka (about 50 neighbourhoods such as Mirpur, Pallabi, Mohakhali, Badda, Rampura, Mohammadpur, Jatrabari, Tejgaon, Uttara), Sylhet, Brahmanbaria (Ashuganj, Sarail, Bhairab, Akhaura), Narsingdi, Gazipur and the highways between them. These places are looked up from a built-in list (`GAZETTEER_TEXT` in `news/fetch_news.py`), so they do not depend on the map search. To add a place, add one line there.
+- One article naming several places (for example "buses burned in Pallabi, Badda and Rampura") becomes **one pending item per place**, up to 5, so each can be approved on its own.
+- If an article says only "the capital" or "Dhaka", you get one pending item for the whole city with a large radius. Drag it to the right place when you review it.
+- Search lists are in `news/feeds.txt`; add or remove lines there.

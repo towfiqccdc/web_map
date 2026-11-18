@@ -1,14 +1,31 @@
 # One RSS feed address per line. Lines starting with # are ignored.
 # The daily job prints which feeds worked and which failed, so a dead address
 # never stops the job — just delete it or replace it here.
+# Focus: Dhaka (head office), Sylhet and Brahmanbaria (project areas) and the highways between them.
+# English and Bangla are both read.
 
-# --- Google News searches (English, Bangladesh, last 2 days) -----------------
-https://news.google.com/rss/search?q=road+accident+Bangladesh+when:2d&hl=en-BD&gl=BD&ceid=BD:en
-https://news.google.com/rss/search?q=highway+robbery+OR+hijack+OR+mugging+Bangladesh+when:2d&hl=en-BD&gl=BD&ceid=BD:en
-https://news.google.com/rss/search?q=bus+truck+collision+killed+Bangladesh+when:2d&hl=en-BD&gl=BD&ceid=BD:en
+# --- Google News searches, English (last 2 days) -----------------------------
+https://news.google.com/rss/search?q=road%20accident%20Bangladesh%20when%3A2d&hl=en-BD&gl=BD&ceid=BD:en
+https://news.google.com/rss/search?q=highway%20robbery%20OR%20hijack%20OR%20mugging%20Bangladesh%20when%3A2d&hl=en-BD&gl=BD&ceid=BD:en
+https://news.google.com/rss/search?q=bus%20truck%20collision%20killed%20Bangladesh%20when%3A2d&hl=en-BD&gl=BD&ceid=BD:en
+https://news.google.com/rss/search?q=Dhaka%20cocktail%20OR%20%22crude%20bomb%22%20OR%20blast%20OR%20explosion%20when%3A2d&hl=en-BD&gl=BD&ceid=BD:en
+https://news.google.com/rss/search?q=Dhaka%20bus%20%22set%20on%20fire%22%20OR%20torched%20OR%20arson%20OR%20%22vehicle%20torched%22%20when%3A2d&hl=en-BD&gl=BD&ceid=BD:en
+https://news.google.com/rss/search?q=road%20blockade%20OR%20roadblock%20OR%20%22blocked%20highway%22%20Dhaka%20OR%20Gazipur%20OR%20Sylhet%20OR%20Brahmanbaria%20OR%20Narsingdi%20when%3A2d&hl=en-BD&gl=BD&ceid=BD:en
+https://news.google.com/rss/search?q=Dhaka%20road%20accident%20OR%20robbery%20OR%20clash%20OR%20violence%20when%3A2d&hl=en-BD&gl=BD&ceid=BD:en
+https://news.google.com/rss/search?q=Sylhet%20OR%20Moulvibazar%20OR%20Habiganj%20OR%20Sunamganj%20road%20accident%20OR%20robbery%20OR%20hijack%20OR%20clash%20when%3A2d&hl=en-BD&gl=BD&ceid=BD:en
+https://news.google.com/rss/search?q=Brahmanbaria%20OR%20Ashuganj%20OR%20Sarail%20OR%20Bhairab%20OR%20Narsingdi%20road%20accident%20OR%20robbery%20OR%20clash%20when%3A2d&hl=en-BD&gl=BD&ceid=BD:en
+https://news.google.com/rss/search?q=%22Dhaka-Sylhet%20highway%22%20OR%20%22Dhaka-Chattogram%20highway%22%20OR%20%22Dhaka-Mymensingh%20highway%22%20accident%20OR%20robbery%20OR%20blockade%20when%3A2d&hl=en-BD&gl=BD&ceid=BD:en
 
-# --- Newspaper feeds (addresses not yet verified — check the first run's report) ---
-https://www.thedailystar.net/rss.xml
+# --- Google News searches, Bangla (last 2 days) --------------------------------
+https://news.google.com/rss/search?q=%E0%A6%95%E0%A6%95%E0%A6%9F%E0%A7%87%E0%A6%B2%20%E0%A6%AC%E0%A6%BF%E0%A6%B8%E0%A7%8D%E0%A6%AB%E0%A7%8B%E0%A6%B0%E0%A6%A3%20when%3A2d&hl=bn&gl=BD&ceid=BD:bn
+https://news.google.com/rss/search?q=%E0%A6%AC%E0%A6%BE%E0%A6%B8%E0%A7%87%20%E0%A6%86%E0%A6%97%E0%A7%81%E0%A6%A8%20when%3A2d&hl=bn&gl=BD&ceid=BD:bn
+https://news.google.com/rss/search?q=%E0%A6%B8%E0%A6%A1%E0%A6%BC%E0%A6%95%20%E0%A6%85%E0%A6%AC%E0%A6%B0%E0%A7%8B%E0%A6%A7%20%E0%A6%A2%E0%A6%BE%E0%A6%95%E0%A6%BE%20when%3A2d&hl=bn&gl=BD&ceid=BD:bn
+https://news.google.com/rss/search?q=%E0%A6%AE%E0%A6%B9%E0%A6%BE%E0%A6%B8%E0%A6%A1%E0%A6%BC%E0%A6%95%E0%A7%87%20%E0%A6%A1%E0%A6%BE%E0%A6%95%E0%A6%BE%E0%A6%A4%E0%A6%BF%20OR%20%E0%A6%9B%E0%A6%BF%E0%A6%A8%E0%A6%A4%E0%A6%BE%E0%A6%87%20OR%20%E0%A6%B9%E0%A6%BE%E0%A6%87%E0%A6%9C%E0%A7%8D%E0%A6%AF%E0%A6%BE%E0%A6%95%20when%3A2d&hl=bn&gl=BD&ceid=BD:bn
+https://news.google.com/rss/search?q=%E0%A6%B8%E0%A6%A1%E0%A6%BC%E0%A6%95%20%E0%A6%A6%E0%A7%81%E0%A6%B0%E0%A7%8D%E0%A6%98%E0%A6%9F%E0%A6%A8%E0%A6%BE%20%E0%A6%B8%E0%A6%BF%E0%A6%B2%E0%A7%87%E0%A6%9F%20OR%20%E0%A6%AC%E0%A7%8D%E0%A6%B0%E0%A6%BE%E0%A6%B9%E0%A7%8D%E0%A6%AE%E0%A6%A3%E0%A6%AC%E0%A6%BE%E0%A6%A1%E0%A6%BC%E0%A6%BF%E0%A6%AF%E0%A6%BC%E0%A6%BE%20OR%20%E0%A6%A8%E0%A6%B0%E0%A6%B8%E0%A6%BF%E0%A6%82%E0%A6%A6%E0%A7%80%20OR%20%E0%A6%97%E0%A6%BE%E0%A6%9C%E0%A7%80%E0%A6%AA%E0%A7%81%E0%A6%B0%20when%3A2d&hl=bn&gl=BD&ceid=BD:bn
+https://news.google.com/rss/search?q=%E0%A6%B8%E0%A6%A1%E0%A6%BC%E0%A6%95%20%E0%A6%A6%E0%A7%81%E0%A6%B0%E0%A7%8D%E0%A6%98%E0%A6%9F%E0%A6%A8%E0%A6%BE%20%E0%A6%A8%E0%A6%BF%E0%A6%B9%E0%A6%A4%20%E0%A6%A2%E0%A6%BE%E0%A6%95%E0%A6%BE%20when%3A2d&hl=bn&gl=BD&ceid=BD:bn
+https://news.google.com/rss/search?q=%E0%A6%A2%E0%A6%BE%E0%A6%95%E0%A6%BE%20%E0%A6%B8%E0%A6%82%E0%A6%98%E0%A6%B0%E0%A7%8D%E0%A6%B7%20OR%20%E0%A6%B9%E0%A6%BE%E0%A6%AE%E0%A6%B2%E0%A6%BE%20OR%20%E0%A6%AD%E0%A6%BE%E0%A6%99%E0%A6%9A%E0%A7%81%E0%A6%B0%20%E0%A6%AF%E0%A6%BE%E0%A6%A8%E0%A6%AC%E0%A6%BE%E0%A6%B9%E0%A6%A8%20when%3A2d&hl=bn&gl=BD&ceid=BD:bn
+
+# --- Newspaper feeds (addresses not yet verified — check the run report) ----------
 https://www.tbsnews.net/rss.xml
-https://www.dhakatribune.com/feed
 https://en.prothomalo.com/feed
+https://www.prothomalo.com/feed/
