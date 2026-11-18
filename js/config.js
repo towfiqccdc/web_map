@@ -27,6 +27,11 @@ window.APP_CONFIG = {
   TRAFFIC_TILE_URL: "",
   TRAFFIC_ATTRIBUTION: "Traffic © TomTom",
 
+  // TEST MODE: true = the 🔒 Admin panel opens with no sign-in. Anyone with the site link can then add,
+  // change or delete risk areas and emergency services (the database was opened for testing too).
+  // Before real use: set this to false AND run supabase/lock_admin.sql.
+  ADMIN_OPEN: true,
+
   // Place search (free OpenStreetMap service; do not hammer it)
   GEOCODER_URL: "https://nominatim.openstreetmap.org/search",
 

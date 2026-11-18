@@ -119,8 +119,10 @@
     say('Loading…');
     loadLib().then(function () {
       sb = sb || window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
+      if (cfg.ADMIN_OPEN) return enterOpen();            // TEST MODE: no sign-in (see js/config.js)
       return sb.auth.getSession();
     }).then(function (r) {
+      if (cfg.ADMIN_OPEN) return;
       var session = r.data && r.data.session;
       if (!session) { say(''); showLogin(); return; }
       return enterIfAdmin(session);
@@ -142,6 +144,17 @@
       $('apPass').value = '';
       return enterIfAdmin(r.data.session);
     });
+  }
+
+  // TEST MODE (ADMIN_OPEN in js/config.js): no sign-in. Works only while the database is also opened
+  // (supabase/open_admin_for_testing.sql). To lock again: ADMIN_OPEN=false and run supabase/lock_admin.sql.
+  function enterOpen() {
+    say('');
+    $('apWho').textContent = '⚠️ Open test mode — no sign-in. Anyone with this link can change data.';
+    $('apOut').classList.add('hidden');
+    show('apLogin', false); show('apMain', true);
+    setTab(tab);
+    return loadRows();
   }
 
   function enterIfAdmin(session) {
@@ -420,7 +433,7 @@
   document.addEventListener('DOMContentLoaded', function () {
     var btn = $('adminBtn');
     if (!btn) return;
-    if (hasStoredSession()) btn.textContent = '🔓 Admin';
+    if (hasStoredSession() || cfg.ADMIN_OPEN) btn.textContent = '🔓 Admin';
     btn.onclick = function () {
       var p = $('adminPanel');
       if (p && !p.classList.contains('hidden')) close(); else open();
