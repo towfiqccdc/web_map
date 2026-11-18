@@ -15,6 +15,8 @@
 
   var sb = null, rows = [], tab = 'new', current = null, point = null;
   var marker = null, circle = null, pendingLayer = null;
+  var svcRows = [], svcCurrent = null;
+  var ICONS = ['🏥', '🚑', '💊', '🩺', '🚔', '🛡️', '🚓', '🚒', '🔥', '⛽', '🛢️', '🔧', '📞', '🏢'];
   var built = false;
 
   function $(id) { return document.getElementById(id); }
@@ -33,7 +35,7 @@
     el.id = 'adminPanel';
     el.className = 'admin-panel panel hidden';
     el.innerHTML =
-      '<div class="heading"><b>Risk areas — admin</b><button id="apClose" class="round" type="button" aria-label="Close">×</button></div>' +
+      '<div class="heading"><b>Admin</b><button id="apClose" class="round" type="button" aria-label="Close">×</button></div>' +
       '<div id="apNotice" class="ap-msg hidden"></div>' +
       '<div id="apLogin" class="hidden">' +
         '<p class="ap-hint">Only emails added as admins can change risk areas.</p>' +
@@ -44,11 +46,26 @@
       '<div id="apMain" class="hidden">' +
         '<div class="ap-user"><small id="apWho"></small><button id="apOut" class="small" type="button">Sign out</button></div>' +
         '<div class="mode-tabs" id="apTabs">' +
-          '<button data-t="new" class="active">+ Add risk</button>' +
+          '<button data-t="new" class="active">+ Risk</button>' +
           '<button data-t="pending">Review <span id="apCP"></span></button>' +
           '<button data-t="active">Active <span id="apCA"></span></button>' +
+          '<button data-t="svc">Services</button>' +
         '</div>' +
         '<div id="apList"></div>' +
+        '<div id="svcBox" class="hidden">' +
+          '<button id="svcNew" class="btn blue" type="button">+ Add an emergency service</button>' +
+          '<input id="svcFind" type="search" placeholder="Search by name…" style="margin-top:8px">' +
+          '<div id="svcList"></div>' +
+          '<div id="svcEditor" class="ap-editor hidden">' +
+            '<b id="svcEdTitle">Service</b>' +
+            '<label for="sName">Name</label><input id="sName" maxlength="150" placeholder="e.g. Narsingdi Sadar Hospital">' +
+            '<div class="ap-row"><div><label for="sType">Type</label><select id="sType"><option value="hospital">Hospital</option><option value="police">Police</option><option value="fire">Fire station</option><option value="fuel">Fuel station</option></select></div>' +
+            '<div><label for="sIcon">Icon</label><select id="sIcon"></select></div></div>' +
+            '<label for="sPhone">Phone (optional)</label><input id="sPhone" type="tel" maxlength="30" placeholder="e.g. 01712345678">' +
+            '<div class="ap-hint">📍 <span id="sLoc">Tap the map to choose the place (drag the pin to adjust)</span></div>' +
+            '<div class="ap-actions" id="svcActions"></div>' +
+          '</div>' +
+        '</div>' +
         '<div id="apEditor" class="ap-editor hidden">' +
           '<b id="apEdTitle">Edit</b>' +
           '<label for="fTitle">What happened, and where</label><input id="fTitle" maxlength="200" placeholder="e.g. Hijack gang active at night near Madhabdi">' +
@@ -71,7 +88,13 @@
     $('apOut').onclick = function () { sb.auth.signOut().then(function () { resetEditor(); $('adminBtn').textContent = '🔒 Admin'; showLogin(); }); };
     $('apTabs').querySelectorAll('button').forEach(function (b) { b.onclick = function () { setTab(b.dataset.t); }; });
     ['fSev', 'fRadius'].forEach(function (id) { $(id).addEventListener('input', drawCircle); });
-    map.on('click', function (e) { if (current && !$('adminPanel').classList.contains('hidden')) setPoint([e.latlng.lat, e.latlng.lng]); });
+    $('sIcon').innerHTML = '<option value="">Default for the type</option>' + ICONS.map(function (i) { return '<option value="' + i + '">' + i + '</option>'; }).join('');
+    $('svcNew').onclick = newService;
+    $('svcFind').addEventListener('input', renderServices);
+    map.on('click', function (e) {
+      if ($('adminPanel').classList.contains('hidden')) return;
+      if ((tab === 'svc' && svcCurrent) || current) setPoint([e.latlng.lat, e.latlng.lng]);
+    });
   }
 
   // ---------- open / close / sign in ---------------------------------------
@@ -141,7 +164,7 @@
   // ---------- map helpers -------------------------------------------------------
   function setPoint(p, pan) {
     point = p;
-    $('fLoc').textContent = p[0].toFixed(5) + ', ' + p[1].toFixed(5);
+    $('fLoc').textContent = $('sLoc').textContent = p[0].toFixed(5) + ', ' + p[1].toFixed(5);
     if (!marker) {
       marker = L.marker(p, { draggable: true, zIndexOffset: 2000 }).addTo(map);
       marker.on('dragend', function () { var ll = marker.getLatLng(); setPoint([ll.lat, ll.lng]); });
@@ -152,7 +175,7 @@
 
   function drawCircle() {
     if (circle) { map.removeLayer(circle); circle = null; }
-    if (!point) return;
+    if (!point || tab === 'svc') return;
     var c = COLORS[$('fSev').value] || COLORS[2];
     circle = L.circle(point, { radius: parseInt($('fRadius').value, 10) || 2000, color: c, weight: 2, fillColor: c, fillOpacity: 0.3, interactive: false }).addTo(map);
   }
@@ -166,6 +189,13 @@
   function drawPending() {
     if (!pendingLayer) pendingLayer = L.layerGroup().addTo(map);
     pendingLayer.clearLayers();
+    if (tab === 'svc') {                                   // show every service so you can see what is missing
+      svcRows.forEach(function (r) {
+        L.circleMarker([r.lat, r.lng], { radius: 7, color: '#fff', weight: 2, fillColor: '#1769aa', fillOpacity: 1 })
+          .on('click', function () { editService(r); }).bindTooltip(r.name).addTo(pendingLayer);
+      });
+      return;
+    }
     if (tab !== 'pending') return;
     rows.filter(function (r) { return r.status === 'pending'; }).forEach(function (r) {
       L.circleMarker([r.lat, r.lng], { radius: 9, color: '#fff', weight: 2, fillColor: '#f79009', fillOpacity: 1 })
@@ -189,7 +219,7 @@
 
   function renderList() {
     var box = $('apList');
-    if (tab === 'new') { box.innerHTML = ''; return; }
+    if (tab === 'new' || tab === 'svc') { box.innerHTML = ''; return; }
     var items = rows.filter(function (r) { return tab === 'pending' ? r.status === 'pending' : isActive(r); });
     if (!items.length) { box.innerHTML = '<div class="ap-empty">' + (tab === 'pending' ? 'Nothing waiting for approval.' : 'No active risk areas.') + '</div>'; return; }
     box.innerHTML = items.map(function (r) {
@@ -242,8 +272,9 @@
   }
 
   function resetEditor() {
-    current = null;
+    current = null; svcCurrent = null;
     if ($('apEditor')) show('apEditor', false);
+    if ($('svcEditor')) svcEditing(false);
     if (built) clearEditorMap();
     if (pendingLayer) pendingLayer.clearLayers();
   }
@@ -251,8 +282,10 @@
   function setTab(t) {
     tab = t;
     $('apTabs').querySelectorAll('button').forEach(function (b) { b.classList.toggle('active', b.dataset.t === t); });
-    current = null; show('apEditor', false); clearEditorMap();
+    current = null; svcCurrent = null; show('apEditor', false); svcEditing(false); clearEditorMap();
+    show('svcBox', t === 'svc');
     if (t === 'new') newManual();
+    if (t === 'svc') { say(''); loadServices(); }
     renderList(); drawPending();
   }
 
@@ -289,6 +322,92 @@
       if (wasNew) newManual();                    // ready for the next one
       loadRows().then(function () { say('Saved ✓', 'good'); });
       if (window.PlannerAPI) window.PlannerAPI.reloadRisks();   // the public map updates at once
+    });
+  }
+
+
+  // ---------- emergency services ---------------------------------------------------------------
+  var TYPE_NAME = { hospital: 'Hospital', police: 'Police', fire: 'Fire station', fuel: 'Fuel station' };
+  var DEFAULT_ICON = { hospital: '🏥', police: '🚔', fire: '🚒', fuel: '⛽' };
+
+  function loadServices() {
+    return sb.from('emergency_services').select('*').order('name', { ascending: true }).limit(2000).then(function (r) {
+      if (r.error) { say(r.error.message, 'err'); return; }
+      svcRows = r.data || [];
+      renderServices(); drawPending();
+    });
+  }
+
+  function renderServices() {
+    var box = $('svcList'), q = $('svcFind').value.trim().toLowerCase();
+    var items = svcRows.filter(function (r) { return !q || r.name.toLowerCase().indexOf(q) > -1 || r.type.indexOf(q) > -1; });
+    if (!items.length) { box.innerHTML = '<div class="ap-empty">No services found.</div>'; return; }
+    box.innerHTML = items.map(function (r) {
+      return '<div class="ap-item' + (svcCurrent && svcCurrent.id === r.id ? ' sel' : '') + '" data-id="' + esc(r.id) + '">' +
+        '<span class="pill">' + esc(TYPE_NAME[r.type] || r.type) + '</span> <b>' + esc((r.icon || DEFAULT_ICON[r.type] || '') + ' ' + r.name) + '</b>' +
+        '<small>' + (r.phone ? esc(r.phone) : 'no phone saved') + '</small></div>';
+    }).join('');
+    box.querySelectorAll('.ap-item').forEach(function (el) {
+      el.onclick = function () { editService(svcRows.filter(function (r) { return r.id === el.dataset.id; })[0]); };
+    });
+  }
+
+  function svcButtons(list) {
+    var b = $('svcActions');
+    b.innerHTML = list.map(function (x) { return '<button class="btn ' + x[1] + '" data-act="' + x[0] + '" type="button">' + x[2] + '</button>'; }).join('');
+    b.querySelectorAll('button').forEach(function (btn) { btn.onclick = function () { svcAct(btn.dataset.act); }; });
+  }
+
+  function fillService(r) {
+    $('sName').value = r.name || ''; $('sType').value = r.type || 'hospital';
+    $('sIcon').value = r.icon || ''; $('sPhone').value = r.phone || '';
+    $('sLoc').textContent = r.lat ? r.lat.toFixed(5) + ', ' + r.lng.toFixed(5) : 'Tap the map to choose the place (drag the pin to adjust)';
+  }
+
+  // while editing one service, hide the long list so the form is right there (important on phones)
+  function svcEditing(on) {
+    show('svcEditor', on); show('svcList', !on); show('svcFind', !on); show('svcNew', !on);
+  }
+
+  function newService() {
+    svcCurrent = {}; svcEditing(true); $('svcEdTitle').textContent = 'Add an emergency service';
+    fillService({}); clearEditorMap(); renderServices();
+    svcButtons([['create', 'ok', 'Add service'], ['cancel', '', 'Cancel']]);
+    say('Tap the map where it is.');
+  }
+
+  function editService(r) {
+    svcCurrent = r; svcEditing(true); $('svcEdTitle').textContent = 'Edit service';
+    fillService(r); clearEditorMap(); setPoint([r.lat, r.lng], true); renderServices();
+    svcButtons([['save', 'blue', 'Save changes'], ['cancel', '', 'Cancel'], ['delete', 'bad', 'Delete']]);
+    say('');
+  }
+
+  function readService() {
+    var name = $('sName').value.trim();
+    if (name.length < 2) throw new Error('Please type the name.');
+    if (!point) throw new Error('Please tap the map to choose the place.');
+    var phone = $('sPhone').value.trim();
+    if (phone && !/^[+\d][\d\s\-()]{2,28}$/.test(phone)) throw new Error('Phone can only have digits, spaces, + - ( ).');
+    return { name: name, type: $('sType').value, icon: $('sIcon').value || null, phone: phone || null, lat: point[0], lng: point[1] };
+  }
+
+  function svcAct(name) {
+    var q, f;
+    if (name === 'cancel') { svcCurrent = null; svcEditing(false); clearEditorMap(); say(''); renderServices(); return; }
+    try {
+      if (name === 'create') { f = readService(); q = sb.from('emergency_services').insert(f); }
+      else if (name === 'save') { f = readService(); q = sb.from('emergency_services').update(f).eq('id', svcCurrent.id); }
+      else if (name === 'delete') { if (!confirm('Delete "' + svcCurrent.name + '" permanently?')) return; q = sb.from('emergency_services').delete().eq('id', svcCurrent.id); }
+    } catch (e) { say(e.message, 'err'); return; }
+    say('Saving…');
+    q.then(function (r) {
+      if (r.error) { say(r.error.message, 'err'); return; }
+      var wasNew = name === 'create';
+      svcCurrent = null; svcEditing(false); clearEditorMap();
+      if (wasNew) newService();
+      loadServices().then(function () { say('Saved ✓', 'good'); });
+      if (window.ServiceStore) window.ServiceStore.reload();      // the public map updates at once
     });
   }
 

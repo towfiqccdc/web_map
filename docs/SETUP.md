@@ -54,3 +54,8 @@ It then runs by itself every day at 06:30 Bangladesh time.
 ## Base map and live traffic
 - The base map is **Esri World Imagery** (satellite, no labels) so the markers and routes stand out. The **Street map** button switches to a labelled map. Esri requires its attribution to stay visible (it is shown bottom right) and has its own terms for heavy use.
 - **Traffic**: with no key, the button opens Google Maps traffic for the area you are looking at. For a live layer *on* this map, get a free key from a traffic tile provider such as TomTom and paste the tile address into `TRAFFIC_TILE_URL` in `js/config.js` (example inside the file). Check the provider's coverage for Bangladesh first.
+
+## Emergency services (hospital / police / fire / fuel)
+- Run `supabase/services.sql` once in the Supabase SQL Editor (already done for the current project). It creates the list and copies the starting services from `js/data.js`.
+- Add, rename, re-icon, set a phone for, or delete a service: 🔒 Admin → **Services**. Pick the type and an icon, tap the map for the place, then Add.
+- The public map does not show them all. Hospitals and police appear only when you are within 5 km of them (zoom does not matter); farther ones disappear, and the map follows you as you travel. Fire and fuel pins appear only when picked in the Nearby help panel. The Nearby help list is unchanged. To change the distance, edit `NEAR_KM` in `js/services.js`. If the database is unreachable, the last saved list (or `js/data.js`) is used.
