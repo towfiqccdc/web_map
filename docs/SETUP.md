@@ -67,3 +67,7 @@ It then runs by itself every day at 06:30 Bangladesh time.
 - One article naming several places (for example "buses burned in Pallabi, Badda and Rampura") becomes **one pending item per place**, up to 5, so each can be approved on its own.
 - If an article says only "the capital" or "Dhaka", you get one pending item for the whole city with a large radius. Drag it to the right place when you review it.
 - Search lists are in `news/feeds.txt`; add or remove lines there.
+
+## TEST MODE: Admin without a password (temporary)
+- `ADMIN_OPEN: true` in `js/config.js` opens 🔒 Admin with no sign-in, and `supabase/open_admin_for_testing.sql` lets anyone change risk areas and emergency services. **Anyone with the site link can then add, change or delete data**, so use it for testing only.
+- To lock again: set `ADMIN_OPEN: false` in `js/config.js` and run `supabase/lock_admin.sql` in the Supabase SQL Editor (or ask Claude to run it).
