@@ -2,9 +2,9 @@
 // Emergency services (hospital / police / fire / fuel).
 //  * Loads the list from the database (admins edit it in 🔒 Admin → Services);
 //    falls back to the last saved copy, then to js/data.js.
-//  * The map does NOT show them all. It shows only the few closest to the middle of
-//    the screen, hospitals and police first. Fire and fuel appear only when you pick
-//    them in the "Nearby help" panel. Move away and the pins change with you.
+//  * The map does NOT show them all. Hospitals and police appear only when YOU are within
+//    a few km of them (zoom does not matter). Fire and fuel appear only when you pick
+//    them in the "Nearby help" panel. Travel away and the pins change with you.
 // Uses globals from app.js: map, layers, markers, ICON, LABEL, icon(), esc(), dist().
 // ============================================================
 (function () {
@@ -14,15 +14,13 @@
   var CACHE_KEY = 'emergency_services_cache_v1';
   var COLUMNS = 'id,type,name,lat,lng,phone,icon';
   var TYPES = ['hospital', 'police', 'fire', 'fuel'];
-  var SHOW = { hospital: 4, police: 4 };      // always-on types and how many to show
-  var PICKED_COUNT = 5;                        // when fire/fuel is chosen in the panel
-  var MIN_ZOOM = 11;                           // zoomed further out than this: no service pins at all
+  var NEAR_KM = 5;                             // hospital / police pins appear when you are this close (straight line)
+  var PICKED_COUNT = 3;                        // fire / fuel: the nearest few, only while chosen in the Nearby help panel
+  var MOVE_M = 50;                             // re-check when you have moved this far
 
   function safePhone(p) { return /^[+\d][\d\s\-()]{2,28}$/.test(p || '') ? String(p).replace(/[^\d+]/g, '') : ''; }
   function iconOf(x) { return x.icon || ICON[x.type]; }
   window.serviceIcon = iconOf;
-
-  function radiusKm(z) { return z >= 14 ? 4 : z >= 13 ? 8 : z >= 12 ? 15 : 25; }
 
   function popup(x) {
     var ph = safePhone(x.phone);
@@ -43,24 +41,23 @@
     });
   }
 
-  // draw only what is close to the middle of the screen
+  // Pins depend only on WHERE YOU ARE (not on zoom or where you pan the map):
+  //  - hospital / police within NEAR_KM of you are drawn; farther ones disappear
+  //  - fire / fuel are drawn only while chosen in "Nearby help" (nearest few)
   function update() {
     if (typeof map === 'undefined' || typeof layers === 'undefined') return;
     TYPES.forEach(function (t) { layers[t].clearLayers(); });
-    var z = map.getZoom();
-    if (z < MIN_ZOOM) return;
-    var c = map.getCenter(), center = [c.lat, c.lng], limit = radiusKm(z);
-    var want = {};
-    Object.keys(SHOW).forEach(function (t) { want[t] = SHOW[t]; });
+    if (!userLocation) return;
     var picked = window.nearbyPickedType && window.nearbyPickedType();
-    if (picked && picked !== 'all') want[picked] = Math.max(want[picked] || 0, PICKED_COUNT);
-    Object.keys(want).forEach(function (t) {
+    TYPES.forEach(function (t) {
+      var always = t === 'hospital' || t === 'police';
+      if (!always && picked !== t) return;
       EMERGENCY_SERVICES
         .filter(function (x) { return x.type === t; })
-        .map(function (x) { return { x: x, d: dist(center, [x.lat, x.lng]) }; })
-        .filter(function (r) { return r.d <= limit; })
+        .map(function (x) { return { x: x, d: dist(userLocation, [x.lat, x.lng]) }; })
+        .filter(function (r) { return !always || r.d <= NEAR_KM; })
         .sort(function (a, b) { return a.d - b.d; })
-        .slice(0, want[t])
+        .slice(0, always ? 20 : PICKED_COUNT)
         .forEach(function (r) { if (markers[r.x.id]) layers[t].addLayer(markers[r.x.id]); });
     });
   }
@@ -98,10 +95,24 @@
   }
   window.ServiceStore = { reload: reload };
 
+  // follow the person while they travel, so pins and the Nearby list stay current
+  function track() {
+    if (!navigator.geolocation) return;
+    var last = null;
+    navigator.geolocation.watchPosition(function (p) {
+      if (window.userPicked) return;                     // they tapped a spot on the map: respect that
+      var ll = [p.coords.latitude, p.coords.longitude];
+      if (last && dist(last, ll) * 1000 < MOVE_M) return;
+      last = ll;
+      setUserLocation(ll);                                // moves the blue dot, does not move the map
+      if (window.renderList) window.renderList();         // also redraws the pins
+    }, function () { /* location off: nothing to do */ }, { enableHighAccuracy: true, maximumAge: 15000, timeout: 20000 });
+  }
+
   document.addEventListener('DOMContentLoaded', function () {
     buildMarkers();                       // built-in list first, so the map works at once
-    map.on('moveend', update);
     update();
     reload();
+    track();
   });
 })();
