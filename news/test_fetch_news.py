@@ -2,6 +2,7 @@
 No internet needed: feeds and the geocoder are faked."""
 import datetime as dt
 import json
+import urllib.parse
 import os
 import unittest
 from unittest import mock
@@ -137,6 +138,60 @@ class Tests(unittest.TestCase):
         rows, _ = self._rows("Robbers hijack bus on Mymensingh highway near Bhaluka", "passengers robbed")
         self.assertEqual(rows[0]["lat"], 24.4)
 
+    # ---- Bangla -> English titles (the manager reads English / Chinese) -------------------------
+    def _tr(self, mapping=None, status=200, text=None):
+        calls = []
+        def fetch(url):
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)["q"][0]
+            calls.append(q)
+            out = text if text is not None else (mapping or {}).get(q)
+            return json.dumps({"responseData": {"translatedText": out or ""}, "responseStatus": status}).encode()
+        return fn.Translator(sleep=0, fetch=fetch), calls
+
+    def test_bangla_title_translated_and_outlet_mapped(self):
+        tr, calls = self._tr({"মিরপুরে বাসে আগুন": "Bus set on fire in Mirpur"})
+        self.assertEqual(tr.title("মিরপুরে বাসে আগুন - প্রথম আলো"), "Bus set on fire in Mirpur - Prothom Alo")
+        self.assertEqual(calls, ["মিরপুরে বাসে আগুন"])                      # outlet name needs no web call
+        self.assertEqual(tr.title("মিরপুরে বাসে আগুন - প্রথম আলো"), "Bus set on fire in Mirpur - Prothom Alo")
+        self.assertEqual(len(calls), 1)                                       # cached
+
+    def test_quota_message_or_untranslated_is_rejected(self):
+        tr, _ = self._tr(text="MYMEMORY WARNING: YOU USED ALL AVAILABLE FREE TRANSLATIONS FOR TODAY")
+        self.assertIsNone(tr.text("ককটেল বিস্ফোরণ"))
+        tr, _ = self._tr(text="ককটেল বিস্ফোরণ")                              # came back still Bangla
+        self.assertIsNone(tr.text("ককটেল বিস্ফোরণ"))
+        tr, _ = self._tr(status=429, text="Bomb blast")
+        self.assertIsNone(tr.text("ককটেল বিস্ফোরণ"))
+
+    def test_rows_get_english_title_and_keep_original(self):
+        tr, _ = self._tr({"মিরপুরে বাসে আগুন, আটক ২": "Bus set on fire in Mirpur, 2 detained"})
+        items = [{"title": "মিরপুরে বাসে আগুন, আটক ২", "link": "https://n/1", "summary": "", "published": NOW}]
+        rows, _ = fn.build_rows(items, fn.Geocoder(sleep=0, fetch=fake_fetch), 2, 30, now=NOW, translator=tr)
+        self.assertEqual(rows[0]["title"], "Bus set on fire in Mirpur, 2 detained")
+        self.assertEqual(rows[0]["title_original"], "মিরপুরে বাসে আগুন, আটক ২")
+
+    def test_offline_english_title_when_translation_fails(self):
+        tr, _ = self._tr(text="")                                              # service down
+        items = [{"title": "রাজধানীর ছয় স্থানে ককটেল বিস্ফোরণ, চার বাসে আগুন", "link": "https://n/2",
+                  "summary": "পল্লবী, মহাখালী ও বাড্ডায়", "published": NOW}]
+        rows, _ = fn.build_rows(items, fn.Geocoder(sleep=0, fetch=fake_fetch), 2, 30, now=NOW, translator=tr)
+        self.assertTrue(rows)
+        for r in rows:
+            self.assertFalse(fn.BN_CHARS.search(r["title"]), r["title"])       # always English
+            self.assertIn("(Bangla report)", r["title"])
+            self.assertTrue(fn.BN_CHARS.search(r["title_original"]))
+        self.assertIn("Cocktail / bomb blast", rows[0]["title"])
+        self.assertIn("Pallabi", rows[0]["title"])
+        # and with no translator at all
+        rows, _ = fn.build_rows(items, fn.Geocoder(sleep=0, fetch=fake_fetch), 2, 30, now=NOW)
+        self.assertFalse(fn.BN_CHARS.search(rows[0]["title"]))
+
+    def test_english_titles_untouched(self):
+        tr, calls = self._tr(text="should not be used")
+        items = [{"title": "Bus set on fire in Mirpur - The Daily Star", "link": "https://n/3", "summary": "", "published": NOW}]
+        rows, _ = fn.build_rows(items, fn.Geocoder(sleep=0, fetch=fake_fetch), 2, 30, now=NOW, translator=tr)
+        self.assertEqual((rows[0]["title"], rows[0]["title_original"], calls), ("Bus set on fire in Mirpur - The Daily Star", None, []))
+
     def test_geocoder_cache_and_cap(self):
         calls = []
         geo = fn.Geocoder(max_calls=2, sleep=0, fetch=lambda u: (calls.append(u), fake_fetch(u))[1])
@@ -169,7 +224,7 @@ class Tests(unittest.TestCase):
             with mock.patch.dict(os.environ, {"SUPABASE_URL": "https://x.supabase.co", "SUPABASE_SERVICE_KEY": "k"}), \
                  mock.patch.object(fn, "http_get", get), mock.patch.object(fn, "supabase_request", req), \
                  mock.patch.object(fn, "Geocoder", lambda: geo), \
-                 mock.patch.object(fn, "build_rows", lambda i, g, a, e: real_build(i, g, a, e, now=NOW)):
+                 mock.patch.object(fn, "build_rows", lambda i, g, a, e, translator=None: real_build(i, g, a, e, now=NOW, translator=translator)):
                 code = fn.main(["--feeds", feeds])
         finally:
             os.remove(feeds)

@@ -79,8 +79,8 @@
    Risk editor panel (main page)
    ====================================================================== */
 .admin-panel{position:absolute;z-index:1002;top:70px;right:14px;width:340px;max-height:calc(100vh - 90px);overflow-y:auto;padding:12px}
-.admin-panel label{display:block;font-size:11px;font-weight:700;color:#667085;margin:10px 0 4px}
-.admin-panel input,.admin-panel select{width:100%;padding:9px;border:1px solid #d8dee8;border-radius:9px;background:#fff;font:inherit;font-size:13px}
+.admin-panel label,.admin-side label{display:block;font-size:11px;font-weight:700;color:#667085;margin:10px 0 4px}
+.admin-panel input,.admin-panel select,.admin-side input,.admin-side select{width:100%;padding:9px;border:1px solid #d8dee8;border-radius:9px;background:#fff;font:inherit;font-size:13px}
 .ap-hint{font-size:11px;color:#667085;margin:8px 0 0}
 .ap-msg{font-size:12px;margin-top:10px;color:#475467}
 .ap-msg.err{color:#b42318;font-weight:600}.ap-msg.good{color:#166534;font-weight:600}
@@ -129,4 +129,19 @@
   .rp-toggle span{transition:transform .2s}
   .route-panel:not(.rp-collapsed) .rp-toggle span{transform:rotate(180deg)}
   .leaflet-bottom.leaflet-right{display:none}
+}
+
+/* admin: the editor opens in its own panel beside the list */
+.admin-side{position:absolute;z-index:1003;top:70px;right:366px;width:340px;max-height:calc(100vh - 90px);overflow-y:auto;padding:12px}
+.admin-side .ap-editor{border-top:0;margin-top:0;padding-top:0}
+.admin-side .ap-editor>b:first-child{display:none}
+#apList,#svcList{max-height:calc(100vh - 290px);overflow-y:auto;padding-right:2px}
+.ap-titlerow{display:flex;gap:8px;align-items:flex-start;justify-content:space-between;margin-top:4px}
+.ap-link{flex:0 0 auto;font-size:11px;font-weight:700;color:#075985;background:#e0f2fe;border-radius:999px;padding:3px 9px;text-decoration:none;white-space:nowrap}
+.ap-link:hover{background:#bae6fd}
+.ap-orig{font-style:italic;color:#667085}
+@media(max-width:700px){
+  .admin-side{top:auto;left:10px;right:10px;bottom:10px;width:auto;max-height:62vh}
+  .admin-side-open .admin-panel{display:none}
+  #apList,#svcList{max-height:38vh}
 }

@@ -15,6 +15,7 @@ create table if not exists public.risk_areas (
   source      text not null check (source in ('news', 'manual')),
   source_url  text unique,                    -- news link; unique so one article is never added twice
   place_text  text,                           -- the place name the news job matched (for you to verify)
+  title_original text,                        -- Bangla headline, when the title above was translated to English
   status      text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
   happened_on date,
   created_at  timestamptz not null default now(),
