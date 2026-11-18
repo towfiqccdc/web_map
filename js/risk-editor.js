@@ -265,7 +265,50 @@
       $('apCA').textContent = '(' + rows.filter(isActive).length + ')';
       renderList();
       drawPending();
+      translateBangla();
     });
+  }
+
+  // ---------- Bangla -> English titles ----------------------------------------------------
+  // Old rows (and any the daily job could not translate) are translated here, once, and saved
+  // back so the next load is instant. Uses the free MyMemory service; nothing is sent but the headline.
+  var BN = /[\u0980-\u09FF]/, translating = false;
+  function mm(text) {
+    return fetch('https://api.mymemory.translated.net/get?q=' + encodeURIComponent(text) + '&langpair=bn|en')
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        var t = j && j.responseData && j.responseData.translatedText;
+        if (!t || String(j.responseStatus) !== '200' || /MYMEMORY/i.test(t) || BN.test(t) || t === text) return null;
+        return t.replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+      }).catch(function () { return null; });
+  }
+  function translateTitle(title) {
+    var m = /^([^:]{2,40}: )?(.*?)( - ([^-]{2,60}))?$/.exec(title);
+    var place = m[1] || '', head = m[2], outlet = m[4] || '';
+    return mm(head).then(function (h) {
+      if (!h) return null;
+      if (!outlet || !BN.test(outlet)) return place + h + (outlet ? ' - ' + outlet : '');
+      return mm(outlet).then(function (o) { return place + h + ' - ' + (o || outlet.replace(BN, '').trim() || 'news'); });
+    });
+  }
+  function translateBangla() {
+    if (translating || !sb) return;
+    var todo = rows.filter(function (r) { return r.title && BN.test(r.title) && !r.title_original; }).slice(0, 40);
+    if (!todo.length) return;
+    translating = true;
+    var chain = Promise.resolve(), changed = 0;
+    todo.forEach(function (r) {
+      chain = chain.then(function () { return translateTitle(r.title); }).then(function (en) {
+        if (!en) return;
+        var orig = r.title;
+        r.title = en; r.title_original = orig; changed++;
+        if ($('fTitle') && current && current.id === r.id) { $('fTitle').value = en; $('fOrig').textContent = 'Original headline: ' + orig; }
+        renderList();
+        return sb.from('risk_areas').update({ title: en, title_original: orig }).eq('id', r.id);
+      });
+    });
+    chain.then(function () { translating = false; if (todo.length && !changed) say('Could not translate right now (free service busy). Titles stay in Bangla; try again later.', 'err'); },
+               function () { translating = false; });
   }
 
   function renderList() {
