@@ -5,7 +5,7 @@ database (Supabase). The public map reads the **approved** ones and, when someon
 *From → To*, picks the route with the fewest reported risks.
 
 ```
-news (daily)  ──▶ [pending] ──you approve──▶ [approved] ──▶ map: From → To  ──▶ safest route
+news (hourly)  ──▶ [pending] ──you approve──▶ [approved] ──▶ map: From → To  ──▶ safest route
 map page → 🔒 Admin (manual, instantly approved) ──────────┘
 ```
 
@@ -29,7 +29,7 @@ map page → 🔒 Admin (manual, instantly approved) ─────────
    - `SUPABASE_SERVICE_KEY` = the service_role key
 3. Open the **Actions** tab → **Daily news check** → **Run workflow**. After a minute open the run: it lists which news feeds worked and how many pending items were added. Feeds that fail are just reported; edit `news/feeds.txt` to remove or replace them.
 
-It then runs by itself every day at 06:30 Bangladesh time.
+It then runs by itself every hour. Items already seen are skipped, so you only see new ones.
 
 ## 4. Every day
 1. Open the map and tap **🔒 Admin** (top right). Sign in with your admin email and password. There is no separate admin page.

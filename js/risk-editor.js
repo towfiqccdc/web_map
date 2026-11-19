@@ -13,7 +13,7 @@
   var SB_LIB = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js';
   var COLORS = { 1: '#f59e0b', 2: '#f97316', 3: '#dc2626' };
 
-  var sb = null, rows = [], tab = 'new', current = null, point = null;
+  var sb = null, rows = [], tab = 'new', current = null, point = null, city = 'all';
   var marker = null, circle = null, pendingLayer = null;
   var svcRows = [], svcCurrent = null;
   var ICONS = ['🏥', '🚑', '💊', '🩺', '🚔', '🛡️', '🚓', '🚒', '🔥', '⛽', '🛢️', '🔧', '📞', '🏢'];
@@ -65,6 +65,7 @@
           '<button data-t="active">Active <span id="apCA"></span></button>' +
           '<button data-t="svc">Services</button>' +
         '</div>' +
+        '<div id="apCities" class="city-tabs hidden"></div>' +
         '<div id="apList"></div>' +
         '<div id="svcBox" class="hidden">' +
           '<button id="svcNew" class="btn blue" type="button">+ Add an emergency service</button>' +
@@ -247,7 +248,7 @@
       return;
     }
     if (tab !== 'pending' && tab !== 'active') return;
-    rows.filter(function (r) { return tab === 'pending' ? r.status === 'pending' : isActive(r); }).forEach(function (r) {
+    tabRows().forEach(function (r) {
       var fill = tab === 'pending' ? '#f79009' : (COLORS[r.severity] || COLORS[2]);
       L.circleMarker([r.lat, r.lng], { radius: 9, color: '#fff', weight: 2, fillColor: fill, fillOpacity: 1 })
         .on('click', function () { edit(r); }).bindTooltip((tab === 'pending' ? 'Pending: ' : '') + r.title).addTo(pendingLayer);
@@ -256,6 +257,42 @@
 
   // ---------- data -------------------------------------------------------------------
   function isActive(r) { return r.status === 'approved' && (!r.expires_at || Date.parse(r.expires_at) > Date.now()); }
+
+  // ---------- city filter tabs ------------------------------------------------------------
+  // The city is worked out from the map position, so it also works for rows saved before this existed.
+  var CITIES = [['Dhaka', 23.78, 90.40, 22], ['Gazipur', 23.99, 90.42, 18], ['Narayanganj', 23.62, 90.50, 15], ['Narsingdi', 23.92, 90.72, 20],
+                ['Brahmanbaria', 23.96, 91.11, 30], ['Cumilla', 23.46, 91.18, 20], ['Sylhet', 24.90, 91.87, 30], ['Chattogram', 22.34, 91.83, 30]];
+  function kmBetween(a, b, c, d) {
+    var x = (c - a) * 111, y = (d - b) * 111 * Math.cos(a * Math.PI / 180);
+    return Math.sqrt(x * x + y * y);
+  }
+  function cityOf(r) {
+    var best = 'Other', bd = 1e9;
+    CITIES.forEach(function (c) { var d = kmBetween(r.lat, r.lng, c[1], c[2]); if (d <= c[3] && d < bd) { bd = d; best = c[0]; } });
+    return best;
+  }
+  function cityOk(r) { return city === 'all' || cityOf(r) === city; }
+  function tabRows() { return rows.filter(function (r) { return tab === 'pending' ? r.status === 'pending' : isActive(r); }); }
+  function renderCities() {
+    var box = $('apCities');
+    if (tab !== 'pending' && tab !== 'active') { box.classList.add('hidden'); return; }
+    var all = tabRows(), counts = {};
+    all.forEach(function (r) { var c = cityOf(r); counts[c] = (counts[c] || 0) + 1; });
+    if (city !== 'all' && !counts[city]) city = 'all';
+    var names = CITIES.map(function (c) { return c[0]; }).concat(['Other']).filter(function (n) { return counts[n]; });
+    if (names.length < 2) { box.classList.add('hidden'); city = 'all'; return; }      // nothing to filter
+    box.classList.remove('hidden');
+    box.innerHTML = [['all', 'All', all.length]].concat(names.map(function (n) { return [n, n, counts[n]]; })).map(function (t) {
+      return '<button type="button" class="city-tab' + (city === t[0] ? ' active' : '') + '" data-c="' + esc(t[0]) + '">' + esc(t[1]) + ' <i>' + t[2] + '</i></button>';
+    }).join('');
+    box.querySelectorAll('button').forEach(function (b) {
+      b.onclick = function () {
+        city = b.dataset.c; closeSide();                      // closeSide re-renders the list and the markers
+        var pts = tabRows().filter(cityOk).map(function (r) { return [r.lat, r.lng]; });
+        if (pts.length) map.fitBounds(L.latLngBounds(pts).pad(0.3), { maxZoom: 13 });
+      };
+    });
+  }
 
   function loadRows() {
     return sb.from('risk_areas').select('*').order('created_at', { ascending: false }).limit(500).then(function (r) {
@@ -313,6 +350,7 @@
 
   function renderList() {
     var box = $('apList');
+    renderCities();
     if (tab === 'svc') { box.innerHTML = ''; return; }
     if (tab === 'new') {
       box.innerHTML = '<button id="apNewBtn" class="btn blue" type="button">+ Add a risk area</button>' +
@@ -320,7 +358,7 @@
       $('apNewBtn').onclick = newManual;
       return;
     }
-    var items = rows.filter(function (r) { return tab === 'pending' ? r.status === 'pending' : isActive(r); });
+    var items = tabRows().filter(cityOk);
     if (!items.length) { box.innerHTML = '<div class="ap-empty">' + (tab === 'pending' ? 'Nothing waiting for approval.' : 'No active risk areas.') + '</div>'; return; }
     box.innerHTML = items.map(function (r) {
       var src = safeUrl(r.source_url);
