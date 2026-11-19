@@ -560,7 +560,7 @@ ROUTE_WORDS = re.compile(
     r"\b(?:to|towards?|for|from|via|bound for)\s+(?:the\s+)?[A-Z][\w'’]+(?:\s+[A-Z][\w'’]+)?"      # "from Dhaka to Feni"
     r"|[A-Z][\w'’]+(?:[-–][A-Z][\w'’]+)+(?:\s+(?:highway|road|expressway|bypass|route|corridor))?"   # "Dhaka-Sylhet highway"
     r"|[A-Z][\w'’]+[-–]bound")
-ROUTE_BN = re.compile(r"[\u0980-\u09FF]+[-–][\u0980-\u09FF]+(?:\s*(?:মহাসড়ক|সড়ক|হাইওয়ে))?"          # ঢাকা-সিলেট মহাসড়ক
+ROUTE_BN = re.compile(r"[\u0980-\u09FF]+[-–][\u0980-\u09FF]+\s*(?:মহাসড়ক|সড়ক|হাইওয়ে)"          # ঢাকা-সিলেট মহাসড়ক
                       r"|[\u0980-\u09FF]+(?:গামী|মুখী|অভিমুখে)|[\u0980-\u09FF]+\s+থেকে")
 
 
@@ -615,10 +615,33 @@ def region_conflict(title, summary, known_places):
     return None
 
 
+# Mirpur is split into numbered sections, about a kilometre apart. "Mirpur-1" must not be drawn at Mirpur-10.
+MIRPUR_SECTIONS = {1: (23.7957, 90.3535), 2: (23.8068, 90.3557), 10: (23.8069, 90.3687),
+                   11: (23.8190, 90.3655), 12: (23.8283, 90.3637)}
+RE_MIRPUR_N = re.compile(r"(?:Mirpur|মিরপুর)[-\s]?([0-9০-৯]{1,2})(?![0-9০-৯])", re.I)
+
+
+def mirpur_sections(text):
+    """Return ([hits], text_with_those_mentions_blanked)."""
+    hits = []
+
+    def take(m):
+        n = int(m.group(1).translate(BN_DIGITS))
+        pt = MIRPUR_SECTIONS.get(n)
+        base = {"known": True, "home": "Dhaka", "radius_m": 1000 if pt else 1500, "pos": m.start()}
+        if pt:
+            hits.append({**base, "lat": pt[0], "lng": pt[1], "place_text": f"Mirpur-{n}"})
+        else:                                           # section we have no exact point for: say so, do not guess
+            hits.append({**base, "lat": 23.8069, "lng": 90.3687, "place_text": f"Mirpur-{n} (exact block not in my list — check location)"})
+        return " " * len(m.group(0))
+    return hits, RE_MIRPUR_N.sub(take, text)
+
+
 def find_known_places(title, summary, limit=5):
     """Places from the built-in list (Dhaka areas, Sylhet, Brahmanbaria...), in the order they are
     mentioned. Neighbourhoods/towns win; the whole city/district is used only if nothing finer is named."""
     text = blank_routes(f"{title}. {summary}")
+    sections, text = mirpur_sections(text)
     hits = []
     for g in GAZETTEER:
         pos = None
@@ -635,6 +658,9 @@ def find_known_places(title, summary, limit=5):
     hits.sort(key=lambda h: h[0])
     fine = [g for _, g in hits if not g["coarse"]]
     chosen = fine[:limit] if fine else [g for _, g in hits][:1]
+    if sections:                                        # exact Mirpur sections beat the general "Mirpur" and whole-city hits
+        pins = sorted(sections, key=lambda h: h["pos"])[:limit]
+        return [{k: v for k, v in h.items() if k != "pos"} for h in pins]
     return [{"lat": g["lat"], "lng": g["lng"], "known": True, "home": home_district(g),
              "place_text": g["name"] + (" (whole city/district — check location)" if g["coarse"] else ""),
              "radius_m": (4000 if g["name"] == "Dhaka" else 8000) if g["coarse"] else 1500} for g in chosen]
