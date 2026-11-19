@@ -214,3 +214,10 @@
   .top-actions{flex:none}
   .ghost,.danger{white-space:nowrap;padding:9px 11px}
 }
+
+/* City filter tabs (Admin list) */
+.city-tabs{display:flex;gap:6px;overflow-x:auto;margin:0 0 10px;padding:2px 2px 6px;scrollbar-width:thin}
+.city-tab{flex:none;border:1.5px solid var(--line,#e4e9f0);background:#fff;color:#344054;border-radius:999px;padding:6px 11px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}
+.city-tab i{font-style:normal;font-weight:800;color:#667085;margin-left:3px}
+.city-tab.active{background:#0f1b2d;border-color:#0f1b2d;color:#fff}
+.city-tab.active i{color:#cbd5e1}

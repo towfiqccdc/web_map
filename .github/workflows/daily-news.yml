@@ -1,11 +1,11 @@
 name: Daily news check
 
-# Runs every day at 06:30 Bangladesh time (00:30 UTC), and whenever you press
+# Runs every hour (at minute 10), and whenever you press
 # "Run workflow" on the Actions tab. It only ADDS pending items; nothing goes live
 # until you approve it on the map (Admin button).
 on:
   schedule:
-    - cron: "30 0 * * *"
+    - cron: "10 * * * *"
   workflow_dispatch:
 
 permissions:
