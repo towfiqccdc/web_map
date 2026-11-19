@@ -234,6 +234,19 @@ class Tests(unittest.TestCase):
         self.assertLess(rows[0]["lng"], 89)                                # Rajshahi, not the Dhaka head office
         self.assertTrue(all("Rajshahi" in q for q in queries), queries)
 
+    def test_mirpur_sections_are_not_all_mirpur_10(self):
+        r1 = self._one("Bus set on fire at Mirpur-1 - New Age BD")[0]
+        self.assertEqual(r1["place_text"], "Mirpur-1")
+        self.assertAlmostEqual(r1["lat"], 23.7957, places=3)
+        r10 = self._one("Bus set on fire at Mirpur-10 roundabout")[0]
+        self.assertEqual(r10["place_text"], "Mirpur-10")
+        r7 = self._one("Cocktail blast near Mirpur 7 bus stand")[0]
+        self.assertIn("check location", r7["place_text"])
+        bn = self._one("মিরপুর-১ এ বাসে আগুন")[0]
+        self.assertEqual(bn["place_text"], "Mirpur-1")
+        plain = self._one("Bus set on fire in Mirpur")[0]
+        self.assertEqual(plain["place_text"], "Mirpur")
+
     def test_dhaka_story_still_pinned_in_dhaka(self):
         rows = self._one("Bus set on fire in Mirpur, Dhaka")
         self.assertEqual(rows[0]["place_text"], "Mirpur")
