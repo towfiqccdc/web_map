@@ -61,6 +61,12 @@ SECURITY_STRONG = re.compile(
     r"block(?:ed|ing|s)?\s+(?:the\s+)?(?:\S+\s+){0,3}(?:highway|road|expressway|bypass)|"
     r"(?:highway|road|expressway)\s+(?:was\s+|were\s+|remained\s+)?blocked)\b", re.I)
 
+# A road being blocked counts even for "garment workers" or "factory" stories (those words only rule out gas/boiler blasts)
+BLOCKAGE = re.compile(
+    r"\b(road ?blocks?|roadblock|blockade[sd]?|barricad(?:e|es|ed|ing)|"
+    r"block(?:ed|ing|s)?\s+(?:the\s+)?(?:\S+\s+){0,3}(?:highway|road|expressway|bypass)|"
+    r"(?:highway|road|expressway)\s+(?:was\s+|were\s+|remained\s+)?blocked)\b", re.I)
+
 # Announced or threatened disruption (not happening yet): hartal, blockade programme, transport strike...
 PLANNED = re.compile(
     r"\b(hartal|blockade programmes?|transport (?:workers'? )?strike|truck(?:ers| owners)'? strike|lorry (?:workers'? )?strike|"
@@ -454,7 +460,7 @@ def classify(title, summary):
         return None
     if PLANNED.search(text):
         return {"type": "other", "severity": 2, "deaths": 0, "planned": True}
-    strong = bool(SECURITY_STRONG.search(text)) and not NOT_SECURITY.search(text)
+    strong = bool(BLOCKAGE.search(text)) or (bool(SECURITY_STRONG.search(text)) and not NOT_SECURITY.search(text))
     if not strong and not ROAD_CONTEXT.search(text):
         return None
     has_acc, has_vio = bool(ACCIDENT.search(text)), bool(VIOLENCE.search(text)) or strong
@@ -637,6 +643,89 @@ def mirpur_sections(text):
     return hits, RE_MIRPUR_N.sub(take, text)
 
 
+# ------------------------------------------------------------------ highways
+# Approximate centre-lines (lat, lng) of the main highways. A highway is hundreds of km long, so a story that
+# says "Dhaka-Mymensingh highway in Gazipur" is pinned where that highway passes through Gazipur.
+CORRIDORS = [
+    {"name": "Dhaka-Mymensingh highway", "names": {"dhaka", "mymensingh", "gazipur", "tongi", "bhaluka", "joydebpur"},
+     "line": [(23.8500, 90.4000), (23.8918, 90.4058), (23.9999, 90.4203), (24.2000, 90.3500), (24.4000, 90.3000), (24.7471, 90.4203)]},
+    {"name": "Dhaka-Chattogram highway", "names": {"dhaka", "chattogram", "cumilla", "feni", "daudkandi", "narayanganj", "sitakunda", "mirsarai", "laksam", "chandina"},
+     "line": [(23.7104, 90.4344), (23.7000, 90.5000), (23.5400, 90.7200), (23.4690, 91.0030), (23.4607, 91.1809), (23.2480, 91.1310),
+              (23.0159, 91.3976), (22.7770, 91.5810), (22.6190, 91.6690), (22.3569, 91.7832)]},
+    {"name": "Dhaka-Sylhet highway", "names": {"dhaka", "sylhet", "bhairab", "brahmanbaria", "habiganj", "moulvibazar", "sreemangal", "narsingdi", "madhabdi", "sarail", "ashuganj"},
+     "line": [(23.7000, 90.5000), (23.8541, 90.6672), (24.0522, 90.9764), (24.0735, 91.1148), (24.3745, 91.4155),
+              (24.3065, 91.7296), (24.4829, 91.7774), (24.8949, 91.8687)]},
+    {"name": "Dhaka-Aricha highway", "names": {"dhaka", "aricha", "savar", "ashulia", "manikganj", "gabtoli"},
+     "line": [(23.7786, 90.3434), (23.8583, 90.2667), (23.8617, 90.0003), (23.7800, 89.7800)]},
+    {"name": "Dhaka-Tangail highway", "names": {"dhaka", "tangail", "gazipur", "joydebpur"},
+     "line": [(23.9999, 90.4203), (24.1200, 90.2600), (24.2513, 89.9167)]},
+]
+ALIASES = {"chittagong": "chattogram", "comilla": "cumilla", "barisal": "barishal", "jessore": "jashore", "joydevpur": "joydebpur"}
+BN_TO_EN = {v: k.lower() for k, v in DISTRICT_BN.items()}
+BN_TO_EN.update({"জয়দেবপুর": "joydebpur", "টঙ্গী": "tongi", "ভালুকা": "bhaluka", "ভৈরব": "bhairab", "সাভার": "savar", "আরিচা": "aricha"})
+RE_HWY_EN = re.compile(r"\b([A-Z][\w']+)\s*[-–/]\s*([A-Z][\w']+)\s+(?:[Hh]ighway|[Rr]oad|[Ee]xpressway|[Bb]ypass|[Mm]ahasarak)\b")
+RE_HWY_BN = re.compile(r"([\u0980-\u09FF]+)\s*[-–]\s*([\u0980-\u09FF]+)\s*(?:মহাসড়ক|সড়ক|হাইওয়ে)")
+
+
+def find_corridor(text):
+    """The known highway a story names ("Dhaka-Mymensingh highway"), or None."""
+    pairs = [(a.lower(), b.lower()) for a, b in RE_HWY_EN.findall(text)]
+    pairs += [(BN_TO_EN.get(a, a), BN_TO_EN.get(b, b)) for a, b in RE_HWY_BN.findall(text)]
+    for a, b in pairs:
+        a, b = ALIASES.get(a, a), ALIASES.get(b, b)
+        for c in CORRIDORS:
+            if a in c["names"] and b in c["names"] and a != b:
+                return c
+    return None
+
+
+def snap_to_line(lat, lng, line):
+    """Nearest point on a polyline. Returns (lat, lng, km)."""
+    from math import cos, radians
+    best = (lat, lng, 1e9)
+    for (a1, o1), (a2, o2) in zip(line, line[1:]):
+        kx = 111.0 * cos(radians(lat))
+        ax, ay, bx, by = (o1 - lng) * kx, (a1 - lat) * 111.0, (o2 - lng) * kx, (a2 - lat) * 111.0
+        dx, dy = bx - ax, by - ay
+        t = max(0.0, min(1.0, -(ax * dx + ay * dy) / ((dx * dx + dy * dy) or 1)))
+        px, py = ax + t * dx, ay + t * dy
+        d = (px * px + py * py) ** 0.5
+        if d < best[2]:
+            best = (lat + py / 111.0, lng + px / kx, d)
+    return best
+
+
+def place_on_corridor(known, corridor):
+    """Whole-district hits become a point on the named highway inside that district; exact places stay put."""
+    out = []
+    for g in known:
+        if g.get("place_text", "").endswith("check location)") and "whole city/district" in g["place_text"]:
+            la, ln, km = snap_to_line(g["lat"], g["lng"], corridor["line"])
+            if km <= 35:
+                base = g["place_text"].split(" (")[0]
+                g = {**g, "lat": la, "lng": ln, "radius_m": 1500,
+                     "place_text": f"{corridor['name']}, {base} (on the highway — approximate, check location)"}
+        out.append(g)
+    return out
+
+
+# ------------------------------------------------------------------ stories about other countries
+FOREIGN = re.compile(r"\b(Iran|Iraq|Syria|Israel|Gaza|Palestin\w*|Lebanon|Yemen|Afghanistan|Pakistan|India|Indian|Nepal|Bhutan|Sri Lanka|Myanmar|"
+                     r"Thailand|Malaysia|Indonesia|China|Japan|Korea|Russia|Ukraine|Turkey|Saudi|Egypt|Nigeria|Kenya|Ethiopia|Sudan|Mexico|"
+                     r"Brazil|Peru|Philippines|Vietnam|Kolkata|Delhi|Mumbai|Assam|Tripura|Kashmir|Texas|California|Florida|London|Paris|"
+                     r"US|U\.S\.|UK|U\.K\.)\b")
+
+
+def is_foreign_story(title, summary):
+    """A story about another country (an Iran bus crash) that names no place in Bangladesh."""
+    text = f"{title}. {summary}"
+    if not FOREIGN.search(text):
+        return False
+    if districts_named(text) or find_known_places(title, summary):
+        return False
+    return True
+
+
 def find_known_places(title, summary, limit=5):
     """Places from the built-in list (Dhaka areas, Sylhet, Brahmanbaria...), in the order they are
     mentioned. Neighbourhoods/towns win; the whole city/district is used only if nothing finer is named."""
@@ -672,7 +761,8 @@ def locate_many(title, summary, geocoder):
     if known:
         other = region_conflict(title, summary, known)
         if not other:
-            return known
+            corridor = find_corridor(f"{title}. {summary}")
+            return place_on_corridor(known, corridor) if corridor else known
         # The story names a different district than the built-in list matched (e.g. "Rajshahi" + "the capital").
         # Accuracy first: place it in the district it names, never in Dhaka by accident.
         log(f"   region mismatch: matched {known[0]['place_text']!r} but story names {other}: {title[:70]}")
@@ -726,6 +816,10 @@ def build_rows(items, geocoder, max_age_days, expiry_days, now=None, translator=
         c = classify(it["title"], it["summary"])
         if not c:
             stats["not_incident"] += 1
+            continue
+        if is_foreign_story(it["title"], it["summary"]):
+            stats["not_incident"] += 1
+            log(f"   outside Bangladesh, skipped: {it['title'][:90]}")
             continue
         locs = locate_many(it["title"], it["summary"], geocoder)
         if not locs:

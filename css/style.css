@@ -221,3 +221,7 @@
 .city-tab i{font-style:normal;font-weight:800;color:#667085;margin-left:3px}
 .city-tab.active{background:#0f1b2d;border-color:#0f1b2d;color:#fff}
 .city-tab.active i{color:#cbd5e1}
+.cat-tabs{margin-top:-2px}
+.cat-tabs .city-tab{font-size:11.5px;padding:5px 10px;background:#f5f7fa}
+.cat-tabs .city-tab.active{background:#1769aa;border-color:#1769aa}
+.pill.cat{background:#eef2f6;color:#344054}

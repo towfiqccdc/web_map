@@ -247,6 +247,25 @@ class Tests(unittest.TestCase):
         plain = self._one("Bus set on fire in Mirpur")[0]
         self.assertEqual(plain["place_text"], "Mirpur")
 
+    def test_highway_plus_district_pins_on_that_highway(self):
+        r = self._one("Garment workers demanding a wage hike blocked the Dhaka-Mymensingh highway in Gazipur this morning, disrupting traffic")[0]
+        self.assertIn("Dhaka-Mymensingh highway", r["place_text"])
+        self.assertIn("Gazipur", r["place_text"])
+        self.assertLess(abs(r["lat"] - 24.0), 0.08)                         # Gazipur stretch, not Dhaka airport (23.85)
+        self.assertEqual(r["type"], "violence")
+        r = self._one("Truck set on fire on Dhaka-Chattogram highway in Feni")[0]
+        self.assertIn("Dhaka-Chattogram highway", r["place_text"])
+        self.assertLess(abs(r["lat"] - 23.0159), 0.08)
+
+    def test_snap_to_line_stays_on_the_road(self):
+        la, ln, km = fn.snap_to_line(24.0, 90.5, fn.CORRIDORS[0]["line"])
+        self.assertLess(km, 12)
+
+    def test_stories_about_other_countries_are_skipped(self):
+        self.assertEqual(self._one("12 dead in Iran bus accident: state media - The Daily Star"), [])
+        self.assertEqual(self._one("Bus crash in India kills 5 near Kolkata"), [])
+        self.assertEqual(len(self._one("Bus set on fire in Mirpur near Indian High Commission, Dhaka")), 1)
+
     def test_dhaka_story_still_pinned_in_dhaka(self):
         rows = self._one("Bus set on fire in Mirpur, Dhaka")
         self.assertEqual(rows[0]["place_text"], "Mirpur")
