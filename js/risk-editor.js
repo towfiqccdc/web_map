@@ -13,7 +13,7 @@
   var SB_LIB = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js';
   var COLORS = { 1: '#f59e0b', 2: '#f97316', 3: '#dc2626' };
 
-  var sb = null, rows = [], tab = 'new', current = null, point = null, city = 'all';
+  var sb = null, rows = [], tab = 'new', current = null, point = null, city = 'all', cat = 'all';
   var marker = null, circle = null, pendingLayer = null;
   var svcRows = [], svcCurrent = null;
   var ICONS = ['🏥', '🚑', '💊', '🩺', '🚔', '🛡️', '🚓', '🚒', '🔥', '⛽', '🛢️', '🔧', '📞', '🏢'];
@@ -66,6 +66,7 @@
           '<button data-t="svc">Services</button>' +
         '</div>' +
         '<div id="apCities" class="city-tabs hidden"></div>' +
+        '<div id="apCats" class="city-tabs cat-tabs hidden"></div>' +
         '<div id="apList"></div>' +
         '<div id="svcBox" class="hidden">' +
           '<button id="svcNew" class="btn blue" type="button">+ Add an emergency service</button>' +
@@ -248,7 +249,7 @@
       return;
     }
     if (tab !== 'pending' && tab !== 'active') return;
-    tabRows().forEach(function (r) {
+    tabRows().filter(itemOk).forEach(function (r) {
       var fill = tab === 'pending' ? '#f79009' : (COLORS[r.severity] || COLORS[2]);
       L.circleMarker([r.lat, r.lng], { radius: 9, color: '#fff', weight: 2, fillColor: fill, fillOpacity: 1 })
         .on('click', function () { edit(r); }).bindTooltip((tab === 'pending' ? 'Pending: ' : '') + r.title).addTo(pendingLayer);
@@ -272,6 +273,27 @@
     return best;
   }
   function cityOk(r) { return city === 'all' || cityOf(r) === city; }
+
+  // ---------- incident type tabs ------------------------------------------------------------
+  // Worked out from the headline (and the Bangla original), so it also covers rows saved earlier.
+  var CATS = [
+    ['accident', 'Road accident', /accident|crash|collision|collid|run over|ran over|hit-and-run|overturn|rammed|mowed|দুর্ঘটনা|চাপা/i],
+    ['robbery', 'Robbery / theft', /robb|hijack|mugg|dacoit|bandit|extort|theft|stole|snatch|loot|ছিনতাই|ডাকাতি|চাঁদাবাজি/i],
+    ['arson', 'Arson / torched', /set fire|set on fire|torch|arson|ablaze|burn|vandali|আগুন|অগ্নিসংযোগ|ভাঙচুর/i],
+    ['bomb', 'Bomb / blast', /bomb|cocktail|blast|explosion|explod|crude|ককটেল|বোমা|বিস্ফোরণ/i],
+    ['blockade', 'Blockade / strike', /blockad|block|hartal|strike|barricad|road ?block|congestion|ultimatum|অবরোধ|হরতাল|ধর্মঘট/i],
+    ['political', 'Political', /politic|\bBNP\b|Awami|Jamaat|\bleague\b|rally|procession|activists|clash|party|election|supporters|student|\bmob\b|রাজনৈতিক|সংঘর্ষ|মিছিল/i],
+    ['killed', 'Killed', /killed|\bdead\b|\bdie[sd]?\b|death|shot dead|stabbed|murder|body found|নিহত|মৃত্যু|খুন/i]
+  ];
+  function catsOf(r) {
+    var t = (r.title || '') + ' ' + (r.title_original || ''), out = [];
+    CATS.forEach(function (c) { if (c[2].test(t)) out.push(c[0]); });
+    if (!out.length) out.push('other');
+    return out;
+  }
+  function catName(k) { for (var i = 0; i < CATS.length; i++) if (CATS[i][0] === k) return CATS[i][1]; return 'Other'; }
+  function catOk(r) { return cat === 'all' || catsOf(r).indexOf(cat) > -1; }
+  function itemOk(r) { return cityOk(r) && catOk(r); }
   function tabRows() { return rows.filter(function (r) { return tab === 'pending' ? r.status === 'pending' : isActive(r); }); }
   function renderCities() {
     var box = $('apCities');
@@ -288,7 +310,28 @@
     box.querySelectorAll('button').forEach(function (b) {
       b.onclick = function () {
         city = b.dataset.c; closeSide();                      // closeSide re-renders the list and the markers
-        var pts = tabRows().filter(cityOk).map(function (r) { return [r.lat, r.lng]; });
+        var pts = tabRows().filter(itemOk).map(function (r) { return [r.lat, r.lng]; });
+        if (pts.length) map.fitBounds(L.latLngBounds(pts).pad(0.3), { maxZoom: 13 });
+      };
+    });
+  }
+
+  function renderCats() {
+    var box = $('apCats');
+    if (tab !== 'pending' && tab !== 'active') { box.classList.add('hidden'); return; }
+    var base = tabRows().filter(cityOk), counts = {};      // counts follow the city you picked
+    base.forEach(function (r) { catsOf(r).forEach(function (k) { counts[k] = (counts[k] || 0) + 1; }); });
+    if (cat !== 'all' && !counts[cat]) cat = 'all';
+    var keys = CATS.map(function (c) { return c[0]; }).concat(['other']).filter(function (k) { return counts[k]; });
+    if (!keys.length) { box.classList.add('hidden'); return; }
+    box.classList.remove('hidden');
+    box.innerHTML = [['all', 'All types', base.length]].concat(keys.map(function (k) { return [k, catName(k), counts[k]]; })).map(function (t) {
+      return '<button type="button" class="city-tab' + (cat === t[0] ? ' active' : '') + '" data-k="' + esc(t[0]) + '">' + esc(t[1]) + ' <i>' + t[2] + '</i></button>';
+    }).join('');
+    box.querySelectorAll('button').forEach(function (b) {
+      b.onclick = function () {
+        cat = b.dataset.k; closeSide();
+        var pts = tabRows().filter(itemOk).map(function (r) { return [r.lat, r.lng]; });
         if (pts.length) map.fitBounds(L.latLngBounds(pts).pad(0.3), { maxZoom: 13 });
       };
     });
@@ -351,6 +394,7 @@
   function renderList() {
     var box = $('apList');
     renderCities();
+    renderCats();
     if (tab === 'svc') { box.innerHTML = ''; return; }
     if (tab === 'new') {
       box.innerHTML = '<button id="apNewBtn" class="btn blue" type="button">+ Add a risk area</button>' +
@@ -358,12 +402,13 @@
       $('apNewBtn').onclick = newManual;
       return;
     }
-    var items = tabRows().filter(cityOk);
+    var items = tabRows().filter(itemOk);
     if (!items.length) { box.innerHTML = '<div class="ap-empty">' + (tab === 'pending' ? 'Nothing waiting for approval.' : 'No active risk areas.') + '</div>'; return; }
     box.innerHTML = items.map(function (r) {
       var src = safeUrl(r.source_url);
       return '<div class="ap-item' + (current && current.id === r.id ? ' sel' : '') + '" data-id="' + esc(r.id) + '">' +
         '<span class="pill ' + esc(r.source) + '">' + esc(r.source) + '</span><span class="pill">' + esc(r.type) + ' · sev ' + esc(r.severity) + '</span>' +
+        catsOf(r).slice(0, 3).map(function (k) { return '<span class="pill cat">' + esc(catName(k)) + '</span>'; }).join('') +
         '<div class="ap-titlerow"><b>' + esc(r.title) + '</b>' +
         (src ? '<a class="ap-link" href="' + esc(src) + '" target="_blank" rel="noopener noreferrer" title="Open the news report">↗ news</a>' : '') + '</div>' +
         '<small>' + (r.place_text ? 'Matched place: ' + esc(r.place_text) + ' · ' : '') + esc((r.happened_on || r.created_at || '').slice(0, 10)) + '</small>' +
