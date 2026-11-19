@@ -192,6 +192,80 @@ class Tests(unittest.TestCase):
         rows, _ = fn.build_rows(items, fn.Geocoder(sleep=0, fetch=fake_fetch), 2, 30, now=NOW, translator=tr)
         self.assertEqual((rows[0]["title"], rows[0]["title_original"], calls), ("Bus set on fire in Mirpur - The Daily Star", None, []))
 
+    # ---- accuracy: a story about another district must not be pinned in Dhaka
+    def _one(self, title, summary="", geo=None):
+        geo = geo or fn.Geocoder(sleep=0, fetch=fake_fetch)
+        items = [{"title": title, "link": "https://n/" + str(abs(hash(title))), "summary": summary, "published": NOW}]
+        return fn.build_rows(items, geo, 2, 30, now=NOW)[0]
+
+    def test_other_district_is_not_pinned_in_dhaka(self):
+        queries = []
+
+        def fetch(url):
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)["q"][0]
+            queries.append(q)
+            return json.dumps([{"lat": "24.37", "lon": "88.60"}]).encode()
+        rows = self._one("Bus set on fire in Rampura, Rajshahi", "The bus was heading to the capital.", fn.Geocoder(sleep=0, fetch=fetch))
+        self.assertEqual(len(rows), 1)
+        self.assertGreater(abs(rows[0]["lng"] - 90.4), 1)                  # nowhere near Dhaka
+        self.assertIn("Rajshahi", rows[0]["place_text"])
+        self.assertTrue(any("Rajshahi" in q for q in queries), queries)
+
+    def test_bangla_other_district_is_not_pinned_in_dhaka(self):
+        queries = []
+
+        def fetch(url):
+            queries.append(urllib.parse.parse_qs(urllib.parse.urlparse(url).query)["q"][0])
+            return json.dumps([{"lat": "24.37", "lon": "88.60"}]).encode()
+        rows = self._one("রাজশাহীতে বাসে আগুন, রাজধানীগামী যাত্রীরা আতঙ্কিত", geo=fn.Geocoder(sleep=0, fetch=fetch))
+        self.assertEqual(len(rows), 1)
+        self.assertGreater(abs(rows[0]["lng"] - 90.4), 1)
+        self.assertIn("Rajshahi", rows[0]["place_text"])
+
+    def test_geocoded_name_is_narrowed_to_the_named_district(self):
+        queries = []
+
+        def fetch(url):
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)["q"][0]
+            queries.append(q)
+            return json.dumps([{"lat": "24.37", "lon": "88.60"}] if "Rajshahi" in q else [{"lat": "23.80", "lon": "90.36"}]).encode()
+        rows = self._one("Petrol bombs hurled at Grameen Bank office in Rajshahi - Jagonews24", geo=fn.Geocoder(sleep=0, fetch=fetch))
+        self.assertEqual(len(rows), 1)
+        self.assertLess(rows[0]["lng"], 89)                                # Rajshahi, not the Dhaka head office
+        self.assertTrue(all("Rajshahi" in q for q in queries), queries)
+
+    def test_dhaka_story_still_pinned_in_dhaka(self):
+        rows = self._one("Bus set on fire in Mirpur, Dhaka")
+        self.assertEqual(rows[0]["place_text"], "Mirpur")
+        self.assertAlmostEqual(rows[0]["lat"], 23.8069, places=3)
+
+    def test_route_endpoints_do_not_decide_the_place(self):
+        rows = self._one("Dhaka-bound bus from Sylhet set on fire at Sreemangal on Dhaka-Sylhet highway")
+        self.assertEqual(len(rows), 1)
+        self.assertTrue(rows[0]["place_text"].startswith("Sreemangal"), rows[0]["place_text"])
+
+    def test_neighbouring_districts_are_not_a_conflict(self):
+        rows = self._one("Bus hijacked in Tongi, Gazipur near Dhaka")
+        self.assertEqual(rows[0]["place_text"], "Tongi")
+
+    def test_corridor_town_known(self):
+        rows = self._one("Truck torched by protesters at Mirsarai on Chattogram-Dhaka highway")
+        self.assertTrue(rows[0]["place_text"].startswith("Mirsarai"))
+        self.assertAlmostEqual(rows[0]["lat"], 22.777, places=2)
+
+    # ---- possible blockades
+    def test_announced_blockade_is_flagged_as_possible(self):
+        rows = self._one("Transport workers announce strike, to block Dhaka-Chattogram highway on Sunday", "Sitakunda leaders said so")
+        self.assertEqual(rows[0]["type"], "other")
+        self.assertTrue(rows[0]["title"].startswith("Possible blockade:"))
+        rows = self._one("সীতাকুণ্ডে মহাসড়ক অবরোধের ডাক")
+        self.assertEqual(rows[0]["type"], "other")
+
+    def test_blockade_happening_now_is_violence(self):
+        rows = self._one("Protesters block Dhaka-Sylhet highway at Sarail for hours")
+        self.assertEqual(rows[0]["type"], "violence")
+        self.assertFalse(rows[0]["title"].startswith("Possible"))
+
     def test_geocoder_cache_and_cap(self):
         calls = []
         geo = fn.Geocoder(max_calls=2, sleep=0, fetch=lambda u: (calls.append(u), fake_fetch(u))[1])

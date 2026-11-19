@@ -78,3 +78,10 @@ It then runs by itself every hour. Items already seen are skipped, so you only s
 - **Bangla titles are translated to English automatically** by the daily job (free MyMemory service). If a translation fails or the free quota is used up, the job writes an English summary such as "Bus set on fire — Sarail (Bangla report)". The Bangla original is always kept and shown as "Original: …".
 - Optional: add a GitHub secret `MYMEMORY_EMAIL` to raise the free translation quota. Only add an email you are happy to share with that service.
 - After merging this change, run the supabase `title_original` column line in `supabase/schema.sql` once (already applied to your project).
+
+## Location accuracy and highway blockades
+- **Wrong-district guard:** if a story names a district (for example Rajshahi) the pin is never placed somewhere else. Place names are looked up *inside that district*; if the exact spot is not found the pin goes to the district centre and is marked "district only — check location". The job log shows `region mismatch` when this guard fires.
+- **Routes are ignored for location:** "Dhaka-bound bus from Sylhet", "Dhaka-Sylhet highway" and "to Chattogram" do not decide where something happened; the place named as the incident location does.
+- **Corridor towns** (Chattogram → Dhaka → Bhairab → Brahmanbaria → Sylhet) are built in: Sitakunda, Mirsarai, Feni, Laksam, Chandina, Daudkandi, Nabinagar, Sreemangal, plus Dhaka areas, Ashuganj, Sarail, Bhairab, Akhaura.
+- **Blockades:** a blockade happening now is a normal (violence) risk area. An announced or threatened one (hartal, blockade programme, transport strike, ultimatum) is added as type "other" with the title starting **"Possible blockade:"**, so you can see it before it happens.
+- An announcement that names no place (a nationwide hartal) cannot be pinned on the map and is skipped.

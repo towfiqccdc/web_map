@@ -57,7 +57,19 @@ VIOLENCE = re.compile(
 # Security incidents that matter even when the text has no road word ("cocktail blast in Mohammadpur")
 SECURITY_STRONG = re.compile(
     r"\b(cocktails?|crude bombs?|petrol bombs?|bombs?|blasts?|explosions?|exploded|detonated|"
-    r"road ?blocks?|roadblock|blockade[sd]?|barricad(?:e|es|ed|ing))\b", re.I)
+    r"road ?blocks?|roadblock|blockade[sd]?|barricad(?:e|es|ed|ing)|"
+    r"block(?:ed|ing|s)?\s+(?:the\s+)?(?:\S+\s+){0,3}(?:highway|road|expressway|bypass)|"
+    r"(?:highway|road|expressway)\s+(?:was\s+|were\s+|remained\s+)?blocked)\b", re.I)
+
+# Announced or threatened disruption (not happening yet): hartal, blockade programme, transport strike...
+PLANNED = re.compile(
+    r"\b(hartal|blockade programmes?|transport (?:workers'? )?strike|truck(?:ers| owners)'? strike|lorry (?:workers'? )?strike|"
+    r"paribahan strike|go(?:es|ing)? on strike|work abstention|ultimatum|"
+    r"announce[sd]? (?:a |an )?(?:road |highway )?(?:blockade|hartal|strike)|"
+    r"(?:will|to|plan to|plans to|threaten(?:s|ed)? to|vow(?:s|ed)? to|warn(?:s|ed)? (?:of|to))\s+(?:block|blockade|seal off|barricade)\s+(?:the\s+)?(?:\S+\s+){0,2}(?:highway|road|roads|expressway)|"
+    r"(?:highway|road) blockade (?:programmes?|call|threat))\b", re.I)
+BN_PLANNED = ("হরতাল", "পরিবহন ধর্মঘট", "পরিবহন শ্রমিক ধর্মঘট", "অবরোধের ডাক", "অবরোধ কর্মসূচি", "অবরোধের কর্মসূচি",
+              "অবরোধের হুমকি", "আলটিমেটাম", "অবরোধের ঘোষণা", "সড়ক অবরোধের", "মহাসড়ক অবরোধের", "ধর্মঘটের ডাক")
 # ...but not gas / boiler / factory explosions, or blasts abroad-style wording
 NOT_SECURITY = re.compile(r"\b(gas|cylinder|boiler|furnace|stove|cooker|mill|factory|garment|chemical|mine|quarry|"
                           r"firecracker|fireworks|cracker|film|movie|serial)\b", re.I)
@@ -87,6 +99,41 @@ DISTRICTS = [
     "Pirojpur", "Rajbari", "Rajshahi", "Rangamati", "Rangpur", "Satkhira", "Shariatpur",
     "Sherpur", "Sirajganj", "Sunamganj", "Sylhet", "Tangail", "Thakurgaon",
 ]
+
+DISTRICT_BN = {
+    "Bagerhat": "বাগেরহাট", "Bandarban": "বান্দরবান", "Barguna": "বরগুনা", "Barishal": "বরিশাল", "Bhola": "ভোলা",
+    "Bogura": "বগুড়া", "Brahmanbaria": "ব্রাহ্মণবাড়িয়া", "Chandpur": "চাঁদপুর", "Chapainawabganj": "চাঁপাইনবাবগঞ্জ",
+    "Chattogram": "চট্টগ্রাম", "Chuadanga": "চুয়াডাঙ্গা", "Cumilla": "কুমিল্লা", "Cox's Bazar": "কক্সবাজার", "Dhaka": "ঢাকা",
+    "Dinajpur": "দিনাজপুর", "Faridpur": "ফরিদপুর", "Feni": "ফেনী", "Gaibandha": "গাইবান্ধা", "Gazipur": "গাজীপুর",
+    "Gopalganj": "গোপালগঞ্জ", "Habiganj": "হবিগঞ্জ", "Jamalpur": "জামালপুর", "Jashore": "যশোর", "Jhalokathi": "ঝালকাঠি",
+    "Jhenaidah": "ঝিনাইদহ", "Joypurhat": "জয়পুরহাট", "Khagrachhari": "খাগড়াছড়ি", "Khulna": "খুলনা", "Kishoreganj": "কিশোরগঞ্জ",
+    "Kurigram": "কুড়িগ্রাম", "Kushtia": "কুষ্টিয়া", "Lakshmipur": "লক্ষ্মীপুর", "Lalmonirhat": "লালমনিরহাট", "Madaripur": "মাদারীপুর",
+    "Magura": "মাগুরা", "Manikganj": "মানিকগঞ্জ", "Meherpur": "মেহেরপুর", "Moulvibazar": "মৌলভীবাজার", "Munshiganj": "মুন্সিগঞ্জ",
+    "Mymensingh": "ময়মনসিংহ", "Naogaon": "নওগাঁ", "Narail": "নড়াইল", "Narayanganj": "নারায়ণগঞ্জ", "Narsingdi": "নরসিংদী",
+    "Natore": "নাটোর", "Netrokona": "নেত্রকোনা", "Nilphamari": "নীলফামারী", "Noakhali": "নোয়াখালী", "Pabna": "পাবনা",
+    "Panchagarh": "পঞ্চগড়", "Patuakhali": "পটুয়াখালী", "Pirojpur": "পিরোজপুর", "Rajbari": "রাজবাড়ী", "Rajshahi": "রাজশাহী",
+    "Rangamati": "রাঙামাটি", "Rangpur": "রংপুর", "Satkhira": "সাতক্ষীরা", "Shariatpur": "শরীয়তপুর", "Sherpur": "শেরপুর",
+    "Sirajganj": "সিরাজগঞ্জ", "Sunamganj": "সুনামগঞ্জ", "Sylhet": "সিলেট", "Tangail": "টাঙ্গাইল", "Thakurgaon": "ঠাকুরগাঁও",
+}
+DISTRICT_ALT = {"Chittagong": "Chattogram", "Comilla": "Cumilla", "Barisal": "Barishal", "Jessore": "Jashore", "Bogra": "Bogura",
+                "Chapai Nawabganj": "Chapainawabganj", "Maulvibazar": "Moulvibazar", "Brahmanbaria": "Brahmanbaria"}
+# Districts that touch each other, so a story naming both is not a contradiction
+NEIGHBOURS = {
+    "Dhaka": {"Gazipur", "Narayanganj", "Munshiganj", "Manikganj", "Narsingdi"},
+    "Gazipur": {"Dhaka", "Narsingdi", "Kishoreganj", "Mymensingh", "Tangail", "Narayanganj", "Manikganj"},
+    "Narayanganj": {"Dhaka", "Gazipur", "Munshiganj", "Narsingdi", "Cumilla", "Chandpur"},
+    "Narsingdi": {"Gazipur", "Dhaka", "Narayanganj", "Kishoreganj", "Brahmanbaria", "Cumilla"},
+    "Brahmanbaria": {"Cumilla", "Habiganj", "Narsingdi", "Kishoreganj", "Sunamganj"},
+    "Cumilla": {"Brahmanbaria", "Feni", "Chandpur", "Narayanganj", "Munshiganj", "Noakhali", "Narsingdi", "Lakshmipur"},
+    "Feni": {"Cumilla", "Chattogram", "Noakhali"},
+    "Chattogram": {"Feni", "Cox's Bazar", "Rangamati", "Khagrachhari", "Bandarban", "Noakhali"},
+    "Sylhet": {"Sunamganj", "Moulvibazar", "Habiganj"},
+    "Habiganj": {"Sylhet", "Moulvibazar", "Brahmanbaria", "Sunamganj", "Kishoreganj"},
+    "Moulvibazar": {"Sylhet", "Habiganj"},
+    "Sunamganj": {"Sylhet", "Habiganj", "Netrokona", "Kishoreganj", "Brahmanbaria"},
+    "Kishoreganj": {"Gazipur", "Narsingdi", "Brahmanbaria", "Habiganj", "Netrokona", "Mymensingh", "Sunamganj"},
+    "Tangail": {"Gazipur", "Manikganj", "Mymensingh", "Jamalpur", "Sirajganj", "Pabna"},
+}
 
 # ------------------------------------------------------------------ Bangla keywords
 # Bangla vowel signs are not "word" characters for Python's \b, so Bangla is matched as plain text.
@@ -248,6 +295,13 @@ Ashuganj||আশুগঞ্জ|24.0382|91.0009
 Sarail||সরাইল|24.0735|91.1148
 Bhairab||ভৈরব|24.0522|90.9764
 Akhaura||আখাউড়া|23.8664|91.2000
+Sitakunda||সীতাকুণ্ড|22.6190|91.6690
+Mirsarai|Mirsharai|মিরসরাই|22.7770|91.5810
+Laksam||লাকসাম|23.2480|91.1310
+Chandina||চান্দিনা|23.4690|91.0030
+Daudkandi||দাউদকান্দি|23.5400|90.7200
+Nabinagar||নবীনগর|23.8900|91.2000
+Sreemangal|Srimangal|শ্রীমঙ্গল|24.3065|91.7296
 Dhaka|the capital;capital city;Dhaka city|ঢাকা;রাজধানী;রাজধানীর|23.8103|90.4125|c
 Narayanganj||নারায়ণগঞ্জ|23.6238|90.5000|c
 Gazipur||গাজীপুর|23.9999|90.4203|c
@@ -260,6 +314,7 @@ Brahmanbaria||ব্রাহ্মণবাড়িয়া|23.9571|91.1115|c
 Kishoreganj||কিশোরগঞ্জ|24.4260|90.7766|c
 Cumilla|Comilla|কুমিল্লা|23.4607|91.1809|c
 Chattogram|Chittagong|চট্টগ্রাম|22.3569|91.7832|c
+Feni||ফেনী|23.0159|91.3976|c
 Tangail||টাঙ্গাইল|24.2513|89.9167|c
 """
 
@@ -367,6 +422,8 @@ def classify_bn(text):
     """Bangla headline/summary -> same result shape as classify()."""
     if _has(text, BN_NOT_INCIDENT):
         return None
+    if _has(text, BN_PLANNED):
+        return {"type": "other", "severity": 2, "deaths": 0, "planned": True}
     strong = _has(text, BN_STRONG) and not _has(text, BN_NOT_SECURITY)
     vehicle = _has(text, BN_VEHICLE)
     fire = _has(text, BN_FIRE) and vehicle                  # "বাসে আগুন": fire only counts when a vehicle/road is named
@@ -395,6 +452,8 @@ def classify(title, summary):
         return classify_bn(text)
     if NOT_AN_INCIDENT.search(text):
         return None
+    if PLANNED.search(text):
+        return {"type": "other", "severity": 2, "deaths": 0, "planned": True}
     strong = bool(SECURITY_STRONG.search(text)) and not NOT_SECURITY.search(text)
     if not strong and not ROAD_CONTEXT.search(text):
         return None
@@ -481,9 +540,15 @@ class Geocoder:
 
 
 def locate(title, summary, geocoder):
-    """Return {lat, lng, place_text, radius_m} or None."""
+    """Return {lat, lng, place_text, radius_m} or None.
+    If the story names a district ("... in Rajshahi"), every lookup is narrowed to it, so a name that also
+    exists elsewhere (a bank head office, a street) cannot land in Dhaka by accident."""
+    named = [d for _, d in districts_named(blank_routes(title))] or [d for _, d in districts_named(blank_routes(summary))]
+    district = named[0] if named else None
     for name, district_only in place_candidates(title, summary)[:4]:   # few tries per article: Nominatim allows 1 request/second
-        pt = geocoder.lookup(name)
+        if district and name in DISTRICT_SET_CASE:
+            continue
+        pt = geocoder.lookup(f"{name}, {district}" if district else name)
         if pt:
             return {"lat": pt[0], "lng": pt[1],
                     "place_text": name + (" (district only — check location)" if district_only else ""),
@@ -491,10 +556,69 @@ def locate(title, summary, geocoder):
     return None
 
 
+ROUTE_WORDS = re.compile(
+    r"\b(?:to|towards?|for|from|via|bound for)\s+(?:the\s+)?[A-Z][\w'’]+(?:\s+[A-Z][\w'’]+)?"      # "from Dhaka to Feni"
+    r"|[A-Z][\w'’]+(?:[-–][A-Z][\w'’]+)+(?:\s+(?:highway|road|expressway|bypass|route|corridor))?"   # "Dhaka-Sylhet highway"
+    r"|[A-Z][\w'’]+[-–]bound")
+ROUTE_BN = re.compile(r"[\u0980-\u09FF]+[-–][\u0980-\u09FF]+(?:\s*(?:মহাসড়ক|সড়ক|হাইওয়ে))?"          # ঢাকা-সিলেট মহাসড়ক
+                      r"|[\u0980-\u09FF]+(?:গামী|মুখী|অভিমুখে)|[\u0980-\u09FF]+\s+থেকে")
+
+
+def blank_routes(text):
+    """Blank out where a vehicle came from / was heading to, and road names: the incident is not there."""
+    return ROUTE_BN.sub(" ", ROUTE_WORDS.sub(" ", text))
+
+
+def districts_named(text):
+    """[(position, district)] for every district named in the text (English or Bangla)."""
+    out = []
+    for d in DISTRICTS:
+        for w in (d, DISTRICT_BN.get(d, "")) + tuple(a for a, c in DISTRICT_ALT.items() if c == d):
+            if not w:
+                continue
+            m = re.search(r"\b" + re.escape(w) + r"\b", text) if w.isascii() else None
+            i = m.start() if m else (text.find(w) if not w.isascii() else -1)
+            if i >= 0:
+                out.append((i, d))
+    return sorted(out)
+
+
+def home_district(g):
+    """The district a known place belongs to: itself if it is a whole city, else the nearest whole city."""
+    best, bd = None, 55
+    for c in GAZETTEER:
+        if c["coarse"] and c["name"] in DISTRICT_SET_CASE:
+            d = _km(g["lat"], g["lng"], c["lat"], c["lng"])
+            if d < bd:
+                best, bd = c["name"], d
+    return best
+
+
+DISTRICT_SET_CASE = set(DISTRICTS)
+
+
+def region_conflict(title, summary, known_places):
+    """If the story clearly names a district that the matched place is NOT in (a "Rajshahi" story that
+    mentions "the capital" or a street name that also exists in Dhaka), return that district; else None."""
+    if not known_places:
+        return None
+    homes = {g["home"] for g in known_places if g.get("home")}
+    if not homes:
+        return None
+    ok = set(homes)
+    for h in homes:
+        ok |= NEIGHBOURS.get(h, set())
+    for text in (blank_routes(title), blank_routes(summary)):          # the headline counts first
+        for _, d in districts_named(text):
+            if d not in ok:
+                return d
+    return None
+
+
 def find_known_places(title, summary, limit=5):
     """Places from the built-in list (Dhaka areas, Sylhet, Brahmanbaria...), in the order they are
     mentioned. Neighbourhoods/towns win; the whole city/district is used only if nothing finer is named."""
-    text = f"{title}. {summary}"
+    text = blank_routes(f"{title}. {summary}")
     hits = []
     for g in GAZETTEER:
         pos = None
@@ -511,7 +635,7 @@ def find_known_places(title, summary, limit=5):
     hits.sort(key=lambda h: h[0])
     fine = [g for _, g in hits if not g["coarse"]]
     chosen = fine[:limit] if fine else [g for _, g in hits][:1]
-    return [{"lat": g["lat"], "lng": g["lng"], "known": True,
+    return [{"lat": g["lat"], "lng": g["lng"], "known": True, "home": home_district(g),
              "place_text": g["name"] + (" (whole city/district — check location)" if g["coarse"] else ""),
              "radius_m": (4000 if g["name"] == "Dhaka" else 8000) if g["coarse"] else 1500} for g in chosen]
 
@@ -520,10 +644,34 @@ def locate_many(title, summary, geocoder):
     """One or more locations for an article. Known places first (no web lookup needed), else the geocoder."""
     known = find_known_places(title, summary)
     if known:
-        return known
+        other = region_conflict(title, summary, known)
+        if not other:
+            return known
+        # The story names a different district than the built-in list matched (e.g. "Rajshahi" + "the capital").
+        # Accuracy first: place it in the district it names, never in Dhaka by accident.
+        log(f"   region mismatch: matched {known[0]['place_text']!r} but story names {other}: {title[:70]}")
+        for name, district_only in place_candidates(title, summary)[:3]:
+            if district_only or name in DISTRICT_SET_CASE:
+                continue
+            pt = geocoder.lookup(f"{name}, {other}")
+            if pt:
+                return [{"lat": pt[0], "lng": pt[1], "place_text": f"{name}, {other}", "radius_m": 2000}]
+        pt = geocoder.lookup(f"{other} district")
+        return [{"lat": pt[0], "lng": pt[1], "place_text": f"{other} (district only — check location)", "radius_m": 8000}] if pt else []
     if BN_CHARS.search(f"{title}{summary}"):
-        return []                                    # the map lookup only understands English names
+        # The map lookup only understands English names, but a district named in Bangla is still worth a pin.
+        for text in (blank_routes(title), blank_routes(summary)):
+            for _, d in districts_named(text):
+                pt = geocoder.lookup(f"{d} district")
+                if pt:
+                    return [{"lat": pt[0], "lng": pt[1], "place_text": f"{d} (district only — check location)", "radius_m": 8000}]
+        return []
     one = locate(title, summary, geocoder)
+    if not one:
+        named = [d for _, d in districts_named(blank_routes(title))] or [d for _, d in districts_named(blank_routes(summary))]
+        pt = geocoder.lookup(f"{named[0]} district") if named else None
+        if pt:
+            one = {"lat": pt[0], "lng": pt[1], "place_text": f"{named[0]} (district only — check location)", "radius_m": 8000}
     return [one] if one else []
 
 
@@ -572,6 +720,8 @@ def build_rows(items, geocoder, max_age_days, expiry_days, now=None, translator=
             if BN_CHARS.search(title_en):                       # Bangla headline -> English (the boss reads English/Chinese)
                 original = it["title"]
                 title_en = (translator.title(original) if translator else None) or describe_bn(it["title"], it["summary"], loc["place_text"])
+            if c.get("planned"):
+                title_en = "Possible blockade: " + title_en
             slug = re.sub(r"[^a-z0-9]+", "-", loc["place_text"].split(" (")[0].lower()).strip("-")
             rows.append({
                 "title": ((loc["place_text"].split(" (")[0] + ": ") if many else "") + title_en[:180],
