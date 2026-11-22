@@ -88,3 +88,20 @@ It then runs by itself every hour. Items already seen are skipped, so you only s
 - **Highway + place:** "blocked the Dhaka-Mymensingh highway in Gazipur" is pinned on that highway where it passes through Gazipur (built-in approximate centre-lines for the Dhaka-Mymensingh, Dhaka-Chattogram, Dhaka-Sylhet, Dhaka-Aricha and Dhaka-Tangail highways). The title shows e.g. "Dhaka-Mymensingh highway, Gazipur (on the highway — approximate, check location)".
 - **Other countries:** stories about places abroad (Iran, India...) that name nothing in Bangladesh are skipped.
 - **Admin filters:** under the city tabs there is a second row of **incident-type** tabs (Road accident, Robbery / theft, Arson / torched, Bomb / blast, Blockade / strike, Political, Killed). A story can have several types. The counts follow the city you picked.
+
+## How a news place is worked out (general rules, not one-off fixes)
+The job reads the whole headline and summary and combines several clues, then checks the answer:
+1. **Every place named** is collected: built-in Dhaka areas and corridor towns, plus *all* official upazilas, unions and districts of Bangladesh (English and Bangla, spelling variants and small typos tolerated). Data: `news/data/places.json` (open data, MIT), rebuilt with `news/build_places.py`.
+2. **What part each place plays:** "in Pallabi", "Sylhet:" at the start, "Sarail police station" = *here*. "a resident of Natore", "hailing from Cumilla", "Dhaka-based", "from X to Y", "Dhaka-bound" = *not here*.
+3. **Same name in several districts** (a Rampura in Dhaka and one in Rajshahi) is settled by the district the story names.
+4. **Highway + place** ("Dhaka-Mymensingh highway in Gazipur") is pinned on that highway inside that place. The outlet name at the end of a title ("- Dhaka Post") is ignored.
+5. **Final check:** the pin must be inside (or within 8 km of) a district the story names, using the official district borders. If not, it is not used.
+6. **Stories about other countries** (a Bangladeshi dying in Saudi Arabia, expatriate stories) are dropped.
+7. **Several places** in one story (Dhaka and Cumilla, or several Dhaka areas) get one pin each.
+8. Pins show how sure we are: area/district centres say "check exact spot" and the admin list shows an orange **⚠ check spot** tag.
+Every hour the job also **audits waiting items**: any whose pin is in the wrong district, or that are about another country, are removed and re-added with the current rules.
+To add a case you saw wrong: put one line in `news/test_locations.py` (`CASES`) and run `python3 -m unittest news.test_locations`.
+
+## Keeping news
+- Waiting and rejected news older than **4 days** is deleted automatically (setting `NEWS_KEEP_DAYS`). Admin also hides older waiting items at once.
+- **Approved items are never deleted automatically.** They stay in the Active tab (an "ended" tag shows once their end date has passed; they then stop counting in route checks). Hover an approved item (always visible on phones) and press the 🗑 bin to delete it.

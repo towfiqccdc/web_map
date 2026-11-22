@@ -12,7 +12,8 @@ Environment variables (set as GitHub "Secrets"):
     SUPABASE_SERVICE_KEY   the SECRET service_role key (never put it in the website)
 Optional:
     NEWS_EXPIRY_DAYS       how long an approved news risk keeps counting (default 30)
-    NEWS_MAX_AGE_DAYS      ignore articles older than this (default 2)
+    NEWS_MAX_AGE_DAYS      ignore articles older than this (default 4)
+    NEWS_KEEP_DAYS         waiting / rejected news older than this is deleted; APPROVED items are never deleted (default 4)
 
 Try it without touching the database:
     python3 news/fetch_news.py --dry-run
@@ -29,6 +30,12 @@ import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from email.utils import parsedate_to_datetime
+
+try:                                    # run as `python news/fetch_news.py` or imported as news.fetch_news
+    from . import places as places_mod, story
+except ImportError:
+    import places as places_mod
+    import story
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 USER_AGENT = "web_map-road-safety/1.0 (+https://github.com/towfiqccdc/web_map)"
@@ -564,15 +571,17 @@ def locate(title, summary, geocoder):
 
 ROUTE_WORDS = re.compile(
     r"\b(?:to|towards?|for|from|via|bound for)\s+(?:the\s+)?[A-Z][\w'’]+(?:\s+[A-Z][\w'’]+)?"      # "from Dhaka to Feni"
-    r"|[A-Z][\w'’]+(?:[-–][A-Z][\w'’]+)+(?:\s+(?:highway|road|expressway|bypass|route|corridor))?"   # "Dhaka-Sylhet highway"
+    r"|[A-Z][\w'’]+(?:[-–][A-Z][\w'’]+)+\s+(?i:highway|road|expressway|bypass|route|corridor)"   # "Dhaka-Sylhet highway" (not "Savar-Ashulia")
     r"|[A-Z][\w'’]+[-–]bound")
 ROUTE_BN = re.compile(r"[\u0980-\u09FF]+[-–][\u0980-\u09FF]+\s*(?:মহাসড়ক|সড়ক|হাইওয়ে)"          # ঢাকা-সিলেট মহাসড়ক
                       r"|[\u0980-\u09FF]+(?:গামী|মুখী|অভিমুখে)|[\u0980-\u09FF]+\s+থেকে")
 
 
 def blank_routes(text):
-    """Blank out where a vehicle came from / was heading to, and road names: the incident is not there."""
-    return ROUTE_BN.sub(" ", ROUTE_WORDS.sub(" ", text))
+    """Blank out where a vehicle came from / was heading to, and road names: the incident is not there.
+    Same length as the input, so positions still line up with the original text."""
+    blank = lambda m: " " * len(m.group(0))
+    return ROUTE_BN.sub(blank, ROUTE_WORDS.sub(blank, text))
 
 
 def districts_named(text):
@@ -755,40 +764,201 @@ def find_known_places(title, summary, limit=5):
              "radius_m": (4000 if g["name"] == "Dhaka" else 8000) if g["coarse"] else 1500} for g in chosen]
 
 
-def locate_many(title, summary, geocoder):
-    """One or more locations for an article. Known places first (no web lookup needed), else the geocoder."""
-    known = find_known_places(title, summary)
-    if known:
-        other = region_conflict(title, summary, known)
-        if not other:
-            corridor = find_corridor(f"{title}. {summary}")
-            return place_on_corridor(known, corridor) if corridor else known
-        # The story names a different district than the built-in list matched (e.g. "Rajshahi" + "the capital").
-        # Accuracy first: place it in the district it names, never in Dhaka by accident.
-        log(f"   region mismatch: matched {known[0]['place_text']!r} but story names {other}: {title[:70]}")
-        for name, district_only in place_candidates(title, summary)[:3]:
-            if district_only or name in DISTRICT_SET_CASE:
+# Score a candidate place. Higher wins. The numbers only need to rank things sensibly:
+#   how specific the place is  +  what part it plays in the story  +  where in the story it is named
+LEVEL_SCORE = {"area": 40, "union": 34, "upazila": 30, "city": 18, "district": 14}
+ROLE_SCORE = {"dateline": 30, "locative": 28, "neutral": 0, "origin": -45}
+LEVEL_RADIUS = {"area": 1500, "union": 2000, "upazila": 3000, "district": 8000}
+REFINE_KM = {"district": 45, "upazila": 15, "union": 8}
+
+
+def known_hits(text):
+    """Every place from the built-in list in the text: [{pos,end,name,level,lat,lng,place_text,radius_m}] (Mirpur sections included)."""
+    out, text2 = [], text
+
+    def take(m):
+        n = int(m.group(1).translate(BN_DIGITS))
+        pt = MIRPUR_SECTIONS.get(n)
+        txt = f"Mirpur-{n}" if pt else f"Mirpur-{n} (exact block not in my list — check location)"
+        out.append({"pos": m.start(), "end": m.end(), "name": f"Mirpur-{n}", "level": "area", "district": "Dhaka",
+                    "lat": (pt or (23.8069, 90.3687))[0], "lng": (pt or (23.8069, 90.3687))[1],
+                    "place_text": txt, "radius_m": 1000 if pt else 1500})
+        return " " * len(m.group(0))
+    text2 = RE_MIRPUR_N.sub(take, text)
+    for g in GAZETTEER:
+        best = None
+        for w in g["en"]:
+            m = re.search(r"\b" + re.escape(w) + r"\b", text2, re.I)
+            if m and (best is None or m.start() < best[0]):
+                best = (m.start(), m.end())
+        for w in g["bn"]:
+            hit = places_mod.bn_find(text2, w) if BN_CHARS.search(text2) else None
+            if hit and (best is None or hit[0] < best[0]):
+                best = hit
+        if best:
+            coarse = g["coarse"]
+            out.append({"pos": best[0], "end": best[1], "name": g["name"], "level": "city" if coarse else "area", "district": None,
+                        "lat": g["lat"], "lng": g["lng"], "coarse": coarse,
+                        "place_text": g["name"] + (" (whole city/district — check location)" if coarse else ""),
+                        "radius_m": (4000 if g["name"] == "Dhaka" else 8000) if coarse else 1500})
+    return out
+
+
+def _official_text(e):
+    if e["level"] == "district":
+        return f"{e['name']} (district only — check location)"
+    if e["level"] == "upazila":
+        return f"{e['name']}, {e['district']} (upazila centre — check exact spot)"
+    return f"{e['name']}, {e['district']} (area centre — check exact spot)"
+
+
+STOPWORDS_FZ = {w.lower() for w in """Police Highway Passenger Several Another Between Dhaka-bound Cocktail Explosion Bangladesh Crossing Station Thursday Wednesday Tuesday
+Saturday Sunday Monday Friday Yesterday Morning Evening Afternoon Overnight Madrasa Hospital Medical College University School Market Bazaar Factory""".split()}
+
+
+def clean_title(title):
+    """Google News titles end with the outlet: "Bus torched in Sylhet - Dhaka Post". The outlet is not a place."""
+    title = title.replace("’", "'")
+    return re.sub(r"\s+[-–|]\s+[^-–|]{3,60}$", "", title) if re.search(r"\s+[-–|]\s+[^-–|]{3,60}$", title) and len(title) > 30 else title
+
+
+def analyse_story(title, summary, geocoder):
+    """Work out where a story happened. Returns (locations, reason); reason is None, "abroad" or "no_place".
+
+    The ways a location is found (all of them are combined and scored, nothing is trusted alone):
+      1. built-in neighbourhoods (Dhaka areas, Mirpur sections, corridor towns)       -> exact
+      2. official upazilas and unions (every one in Bangladesh), English and Bangla    -> area centre
+      3. official district names                                                       -> whole district
+      4. the part the place plays: "in X", "X:" at the start, "X police station" = here;
+         "resident of X", "hailing from X", "from X to Y" = NOT here
+      5. duplicate names (a Rampura in Dhaka and one in Rajshahi) settled by the district the story names
+      6. highway + place ("Dhaka-Mymensingh highway in Gazipur") -> point on that highway inside that district
+      7. street/market/bridge names found with the map lookup, narrowed to the district
+      8. final check: the pin must be inside (or right beside) a district the story names
+      9. stories about other countries (expatriates, "died in Saudi Arabia") are dropped
+    """
+    eng = places_mod.engine()
+    title = clean_title(title)
+    summary = (summary or "").replace("’", "'")
+    full = f"{title}. {summary}"
+    text, tl = blank_routes(full), len(title)
+    cands = []
+    for h in known_hits(text):
+        h["source"] = "curated"
+        cands.append(h)
+    named_all = []                                               # districts the story names, with their role
+    if eng:
+        for m in eng.mentions(text):
+            ents = m["entries"]
+            for e in ents:
+                if e["level"] == "district":
+                    named_all.append({**e, "pos": m["pos"], "end": m["end"], "role": story.role_of(text, m["pos"], m["end"], tl)})
+        for m in eng.mentions(text):
+            for e in m["entries"]:
+                if e["level"] == "district":
+                    cands.append({"pos": m["pos"], "end": m["end"], "name": e["name"], "level": "district", "district": e["district"],
+                                  "lat": e["lat"], "lng": e["lng"], "place_text": _official_text(e), "radius_m": 8000, "source": "official"})
+        target = [d["district"] for d in named_all if d["role"] != "origin"]
+        for e in eng.resolve(text, named=target or None):
+            cands.append({"pos": e["pos"], "end": e["end"], "name": e["name"], "level": e["level"], "district": e["district"],
+                          "lat": e["lat"], "lng": e["lng"], "place_text": _official_text(e), "radius_m": LEVEL_RADIUS[e["level"]], "source": "official"})
+    else:
+        target = []
+    if eng:                                                     # misspelt names after "in/at/near": Jhalokati, Barolekha ...
+        covered = [(c["pos"], c["end"]) for c in cands]
+        for m in re.finditer(r"\b[A-Z][a-z']{5,}\b", text):
+            if any(a_ <= m.start() < b_ for a_, b_ in covered) or m.group(0).lower() in STOPWORDS_FZ:
                 continue
-            pt = geocoder.lookup(f"{name}, {other}")
-            if pt:
-                return [{"lat": pt[0], "lng": pt[1], "place_text": f"{name}, {other}", "radius_m": 2000}]
-        pt = geocoder.lookup(f"{other} district")
-        return [{"lat": pt[0], "lng": pt[1], "place_text": f"{other} (district only — check location)", "radius_m": 8000}] if pt else []
-    if BN_CHARS.search(f"{title}{summary}"):
-        # The map lookup only understands English names, but a district named in Bangla is still worth a pin.
-        for text in (blank_routes(title), blank_routes(summary)):
-            for _, d in districts_named(text):
-                pt = geocoder.lookup(f"{d} district")
-                if pt:
-                    return [{"lat": pt[0], "lng": pt[1], "place_text": f"{d} (district only — check location)", "radius_m": 8000}]
-        return []
+            if story.role_of(text, m.start(), m.end(), tl) not in ("locative", "dateline"):
+                continue
+            ents = eng.fuzzy(m.group(0))
+            if ents and len({e["district"] for e in ents}) == 1:
+                e = ents[0]
+                cands.append({"pos": m.start(), "end": m.end(), "name": e["name"], "level": e["level"], "district": e["district"],
+                              "lat": e["lat"], "lng": e["lng"], "place_text": _official_text(e), "radius_m": LEVEL_RADIUS[e["level"]],
+                              "source": "official", "fuzzy": True})
+    for c in cands:
+        c["role"] = story.role_of(text, c["pos"], c["end"], tl)
+        if eng and not c.get("district"):
+            c["district"] = eng.district_at(c["lat"], c["lng"])
+
+    bd = [{"pos": c["pos"], "end": c["end"], "role": c["role"]} for c in cands]
+    if story.is_abroad(full, bd, tl):
+        return [], "abroad"
+
+    # Rule 8: keep only pins that sit in a district the story names (the "capital" in a Rajshahi story is not Dhaka)
+    if eng and target:
+        cands = [c for c in cands if eng.fits(c["lat"], c["lng"], target)]
+    good = [c for c in cands if c["role"] != "origin"]
+    if cands and not good:
+        return [], "no_place"                                      # the only places named are where people come from
+
+    if good:
+        for c in good:
+            c["score"] = (LEVEL_SCORE[c["level"]] + ROLE_SCORE[c["role"]] + (12 if c["pos"] < tl else 4 if c["pos"] < tl + 250 else 0)
+                          + (3 if c["source"] == "curated" else 0))
+        good.sort(key=lambda c: (-c["score"], c["pos"]))
+        uniq, names = [], set()
+        for c in good:                                               # the same place found twice (built-in + official): keep the best
+            if c["name"].lower() not in names:
+                names.add(c["name"].lower())
+                uniq.append(c)
+        best, good = uniq[0], uniq
+        chosen = [best]
+        others = []                                                 # "bomb blast in Dhaka, bus attacked in Cumilla": one pin per place
+        seen_d = {best["district"]}
+        for c in good[1:]:
+            in_title_list = c["pos"] < tl and c["role"] == "neutral" and c["level"] in ("city", "district", "upazila")
+            if c["district"] not in seen_d and (c["role"] in ("locative", "dateline") or in_title_list) and len(others) < 2:
+                seen_d.add(c["district"])
+                others.append(c)
+        if best["level"] in ("area", "union"):                      # a story naming several neighbourhoods gets one pin each
+            more = [c for c in good[1:] if c["level"] in ("area", "union") and c["district"] == best["district"]]
+            chosen = sorted([best] + more, key=lambda c: c["pos"])[:5]
+        else:
+            chosen = [best]
+        chosen = chosen + others
+        corridor = find_corridor(full)
+        out = []
+        for c in chosen:
+            loc = {"lat": c["lat"], "lng": c["lng"], "place_text": c["place_text"], "radius_m": c["radius_m"], "known": True, "district": c["district"]}
+            if c["level"] in ("city", "district", "upazila", "union") and not c.get("refined"):
+                better = _refine(loc, c, title, summary, geocoder, eng)
+                if better:
+                    loc = better
+            if corridor and loc.get("known") and c["level"] in ("city", "district", "upazila", "union"):
+                loc = place_on_corridor([{**loc, "place_text": loc["place_text"] if "check" in loc["place_text"] else loc["place_text"] + " (check location)"}], corridor)[0]
+            out.append(loc)
+        return out, None
+
+    # Nothing in the built-in or official lists: use the map lookup, then check the result against the story
+    if BN_CHARS.search(full):
+        return [], "no_place"
     one = locate(title, summary, geocoder)
     if not one:
-        named = [d for _, d in districts_named(blank_routes(title))] or [d for _, d in districts_named(blank_routes(summary))]
-        pt = geocoder.lookup(f"{named[0]} district") if named else None
-        if pt:
-            one = {"lat": pt[0], "lng": pt[1], "place_text": f"{named[0]} (district only — check location)", "radius_m": 8000}
-    return [one] if one else []
+        return [], "no_place"
+    one["known"] = False
+    return [one], None
+
+
+def _refine(loc, c, title, summary, geocoder, eng):
+    """Try to improve a whole-district / area-centre pin with a street, market or bridge named in the story."""
+    ctx = c["district"] if c["level"] in ("district", "city") else f"{c['name']}, {c['district']}"
+    limit = REFINE_KM.get(c["level"] if c["level"] != "city" else "district", 20)
+    tried = 0
+    for name, district_only in place_candidates(title, summary):
+        if district_only or name in DISTRICT_SET_CASE or name.lower() == c["name"].lower() or tried >= 2:
+            continue
+        tried += 1
+        pt = geocoder.lookup(f"{name}, {ctx}")
+        if pt and (not eng or eng.fits(pt[0], pt[1], [c["district"]])) and _km(pt[0], pt[1], c["lat"], c["lng"]) <= limit:
+            return {"lat": pt[0], "lng": pt[1], "place_text": f"{name}, {c['district']}", "radius_m": 1500, "known": False, "district": c["district"]}
+    return None
+
+
+def locate_many(title, summary, geocoder):
+    """One or more locations for an article (see analyse_story)."""
+    return analyse_story(title, summary, geocoder)[0]
 
 
 # ------------------------------------------------------------------ pipeline
@@ -817,13 +987,14 @@ def build_rows(items, geocoder, max_age_days, expiry_days, now=None, translator=
         if not c:
             stats["not_incident"] += 1
             continue
-        if is_foreign_story(it["title"], it["summary"]):
+        locs, why = analyse_story(it["title"], it["summary"], geocoder)
+        if why == "abroad":
             stats["not_incident"] += 1
             log(f"   outside Bangladesh, skipped: {it['title'][:90]}")
             continue
-        locs = locate_many(it["title"], it["summary"], geocoder)
         if not locs:
             stats["no_place"] += 1
+            UNMAPPED.append(it["title"][:120])
             log(f"   no place found: {it['title'][:90]}")
             continue
         happened = (it["published"] or now).date().isoformat()
@@ -884,13 +1055,62 @@ def drop_already_stored(rows, request=None):
     return fresh
 
 
+UNMAPPED = []                    # headlines that were incidents but had no usable place (listed in the run summary)
+
+
+def cleanup_old(request, keep_days=4, today=None):
+    """Delete waiting and rejected news older than keep_days. Approved items are NEVER touched."""
+    today = today or dt.date.today()
+    cutoff = (today - dt.timedelta(days=keep_days)).isoformat()
+    gone = request("DELETE", f"/rest/v1/risk_areas?source=eq.news&status=in.(pending,rejected)&happened_on=lt.{cutoff}&select=id",
+                   None, {"Prefer": "return=representation"}) or []
+    return len(gone)
+
+
+class _NoWeb:
+    def lookup(self, name):
+        return None
+
+
+def audit_row(row):
+    """Why a stored WAITING row looks wrong ("abroad" / "wrong district"), or None if it is fine.
+    Uses only the headline, so it costs no web lookups. Rows the admin has approved are never audited."""
+    eng = places_mod.engine()
+    title = clean_title(row.get("title_original") or row.get("title") or "")
+    if not title:
+        return None
+    locs, why = analyse_story(title, "", _NoWeb())
+    if why == "abroad":
+        return "abroad"
+    if eng and row.get("lat") is not None:
+        text = blank_routes(title)
+        named = [m["entries"][0]["district"] for m in eng.mentions(text)
+                 if m["entries"][0]["level"] == "district" and story.role_of(text, m["pos"], m["end"], len(title)) != "origin"]
+        if named and not eng.fits(row["lat"], row["lng"], named):
+            return "wrong district"
+    return None
+
+
+def audit_pending(request):
+    """Self-heal: delete waiting news whose pin is in the wrong district or that is about another country.
+    The normal run right after re-adds the story (if it is still in the feeds) with the current rules."""
+    rows = request("GET", "/rest/v1/risk_areas?select=id,title,title_original,lat,lng&source=eq.news&status=eq.pending&limit=1000") or []
+    bad = [(r, audit_row(r)) for r in rows]
+    bad = [(r, why) for r, why in bad if why]
+    for r, why in bad:
+        log(f"   audit: removing ({why}): {r['title'][:80]}")
+        request("DELETE", f"/rest/v1/risk_areas?id=eq.{r['id']}&status=eq.pending", None, {"Prefer": "return=minimal"})
+    return len(bad)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--dry-run", action="store_true", help="show what would be added; do not touch the database")
     ap.add_argument("--feeds", default=os.path.join(HERE, "feeds.txt"))
     args = ap.parse_args(argv)
 
-    max_age = int(os.environ.get("NEWS_MAX_AGE_DAYS", "2"))
+    max_age = int(os.environ.get("NEWS_MAX_AGE_DAYS", "4"))
+    keep_days = int(os.environ.get("NEWS_KEEP_DAYS", "4"))
     expiry = int(os.environ.get("NEWS_EXPIRY_DAYS", "30"))
     if not args.dry_run and not (os.environ.get("SUPABASE_URL") and os.environ.get("SUPABASE_SERVICE_KEY")):
         log("ERROR: set SUPABASE_URL and SUPABASE_SERVICE_KEY (or use --dry-run).")
@@ -907,6 +1127,14 @@ def main(argv=None):
             failed.append(url)
             log(f"FAIL  {url[:100]}  ({type(e).__name__}: {e})")
 
+    removed_old = audited = 0
+    if not args.dry_run:                               # housekeeping first; a failure here must not stop the news check
+        try:
+            removed_old = cleanup_old(supabase_request, keep_days)
+            audited = audit_pending(supabase_request)
+            log(f"Housekeeping: deleted {removed_old} old waiting/rejected item(s), removed {audited} wrongly placed item(s) to redo them.")
+        except Exception as e:
+            log(f"Housekeeping skipped: {type(e).__name__}: {e}")
     rows, stats = build_rows(items, Geocoder(), max_age, expiry,
                              translator=Translator(email=os.environ.get("MYMEMORY_EMAIL")))
     log(f"\nFeeds ok: {ok}, failed: {len(failed)}   |   {stats}")
@@ -927,7 +1155,12 @@ def main(argv=None):
     if summary:
         with open(summary, "a", encoding="utf-8") as f:
             f.write(f"### Daily news check\n- Feeds ok: **{ok}**, failed: **{len(failed)}**\n"
-                    f"- New pending risk areas: **{len(rows)}**\n- Details: `{stats}`\n")
+                    f"- New pending risk areas: **{len(rows)}**\n- Details: `{stats}`\n"
+                    f"- Housekeeping: old items deleted **{removed_old}**, wrongly placed items redone **{audited}**\n")
+            if UNMAPPED:
+                f.write("- Incidents with no usable place (not mapped, check by hand if they matter, e.g. highway-only reports):\n")
+                for t in UNMAPPED[:25]:
+                    f.write(f"  - {t}\n")
             for u in failed:
                 f.write(f"- ⚠️ feed failed: `{u}`\n")
     return 0 if ok else 1          # every feed failed -> mark the run red so you get an email

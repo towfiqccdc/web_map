@@ -136,7 +136,7 @@ class Tests(unittest.TestCase):
 
     def test_unknown_place_falls_back_to_map_lookup(self):
         rows, _ = self._rows("Robbers hijack bus on Mymensingh highway near Bhaluka", "passengers robbed")
-        self.assertEqual(rows[0]["lat"], 24.4)
+        self.assertAlmostEqual(rows[0]["lat"], 24.4, delta=0.05)
 
     # ---- Bangla -> English titles (the manager reads English / Chinese) -------------------------
     def _tr(self, mapping=None, status=200, text=None):
@@ -335,8 +335,10 @@ class Tests(unittest.TestCase):
         finally:
             os.remove(feeds)
         self.assertEqual(code, 0)                           # one feed died, the run still succeeds
-        self.assertEqual(len(sent), 1)
-        path, body, extra = sent[0]
+        self.assertTrue(any("status=in.(pending,rejected)" in x[0] for x in sent))     # old waiting news cleaned up first
+        posts = [x for x in sent if "on_conflict" in x[0]]
+        self.assertEqual(len(posts), 1)
+        path, body, extra = posts[0]
         self.assertIn("on_conflict=source_url", path)
         self.assertIn("ignore-duplicates", extra["Prefer"])
         self.assertEqual(len(body), 2)
