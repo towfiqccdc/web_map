@@ -250,7 +250,7 @@
     }
     if (tab !== 'pending' && tab !== 'active') return;
     tabRows().filter(itemOk).forEach(function (r) {
-      var fill = tab === 'pending' ? '#f79009' : (COLORS[r.severity] || COLORS[2]);
+      var fill = tab === 'pending' ? '#f79009' : isEnded(r) ? '#98a2b3' : (COLORS[r.severity] || COLORS[2]);
       L.circleMarker([r.lat, r.lng], { radius: 9, color: '#fff', weight: 2, fillColor: fill, fillOpacity: 1 })
         .on('click', function () { edit(r); }).bindTooltip((tab === 'pending' ? 'Pending: ' : '') + r.title).addTo(pendingLayer);
     });
@@ -258,6 +258,13 @@
 
   // ---------- data -------------------------------------------------------------------
   function isActive(r) { return r.status === 'approved' && (!r.expires_at || Date.parse(r.expires_at) > Date.now()); }
+  // Waiting news is kept for 4 days (the daily job deletes older ones); APPROVED items are never removed automatically.
+  var KEEP_DAYS = 4;
+  function isFresh(r) {
+    var t = Date.parse((r.happened_on || r.created_at || '').slice(0, 10));
+    return isNaN(t) || t >= Date.now() - (KEEP_DAYS + 1) * 864e5;
+  }
+  function isEnded(r) { return r.status === 'approved' && r.expires_at && Date.parse(r.expires_at) <= Date.now(); }
 
   // ---------- city filter tabs ------------------------------------------------------------
   // The city is worked out from the map position, so it also works for rows saved before this existed.
@@ -294,7 +301,7 @@
   function catName(k) { for (var i = 0; i < CATS.length; i++) if (CATS[i][0] === k) return CATS[i][1]; return 'Other'; }
   function catOk(r) { return cat === 'all' || catsOf(r).indexOf(cat) > -1; }
   function itemOk(r) { return cityOk(r) && catOk(r); }
-  function tabRows() { return rows.filter(function (r) { return tab === 'pending' ? r.status === 'pending' : isActive(r); }); }
+  function tabRows() { return rows.filter(function (r) { return tab === 'pending' ? (r.status === 'pending' && isFresh(r)) : r.status === 'approved'; }); }
   function renderCities() {
     var box = $('apCities');
     if (tab !== 'pending' && tab !== 'active') { box.classList.add('hidden'); return; }
@@ -341,8 +348,8 @@
     return sb.from('risk_areas').select('*').order('created_at', { ascending: false }).limit(500).then(function (r) {
       if (r.error) { say(r.error.message, 'err'); return; }
       rows = r.data || [];
-      $('apCP').textContent = '(' + rows.filter(function (x) { return x.status === 'pending'; }).length + ')';
-      $('apCA').textContent = '(' + rows.filter(isActive).length + ')';
+      $('apCP').textContent = '(' + rows.filter(function (x) { return x.status === 'pending' && isFresh(x); }).length + ')';
+      $('apCA').textContent = '(' + rows.filter(function (x) { return x.status === 'approved'; }).length + ')';
       renderList();
       drawPending();
       translateBangla();
@@ -409,14 +416,29 @@
       return '<div class="ap-item' + (current && current.id === r.id ? ' sel' : '') + '" data-id="' + esc(r.id) + '">' +
         '<span class="pill ' + esc(r.source) + '">' + esc(r.source) + '</span><span class="pill">' + esc(r.type) + ' · sev ' + esc(r.severity) + '</span>' +
         catsOf(r).slice(0, 3).map(function (k) { return '<span class="pill cat">' + esc(catName(k)) + '</span>'; }).join('') +
+        (isEnded(r) ? '<span class="pill ended" title="Past its end date: no longer counted in route checks">ended</span>' : '') +
+        (/check/i.test(r.place_text || '') ? '<span class="pill warn" title="The exact spot is not certain. Check it on the map before approving.">⚠ check spot</span>' : '') +
+        (tab === 'active' ? '<button type="button" class="ap-del" data-del="' + esc(r.id) + '" title="Delete this approved item">🗑</button>' : '') +
         '<div class="ap-titlerow"><b>' + esc(r.title) + '</b>' +
         (src ? '<a class="ap-link" href="' + esc(src) + '" target="_blank" rel="noopener noreferrer" title="Open the news report">↗ news</a>' : '') + '</div>' +
         '<small>' + (r.place_text ? 'Matched place: ' + esc(r.place_text) + ' · ' : '') + esc((r.happened_on || r.created_at || '').slice(0, 10)) + '</small>' +
         (r.title_original ? '<small class="ap-orig">Original: ' + esc(r.title_original) + '</small>' : '') + '</div>';
     }).join('');
+    box.querySelectorAll('.ap-del').forEach(function (b) {
+      b.onclick = function (ev) {
+        ev.stopPropagation();
+        var r = rows.filter(function (x) { return x.id === b.dataset.del; })[0];
+        if (!r || !confirm('Delete "' + r.title + '" permanently?')) return;
+        sb.from('risk_areas').delete().eq('id', r.id).then(function (res) {
+          if (res.error) { say(res.error.message, 'err'); return; }
+          if (current && current.id === r.id) closeSide();
+          loadRows().then(function () { if (window.PlannerAPI) window.PlannerAPI.reloadRisks(); });
+        });
+      };
+    });
     box.querySelectorAll('.ap-item').forEach(function (el) {
       el.onclick = function (ev) {
-        if (ev.target.closest('a')) return;                       // the news link opens the news, not the editor
+        if (ev.target.closest('a') || ev.target.closest('.ap-del')) return;      // link opens the news, bin deletes
         edit(rows.filter(function (r) { return r.id === el.dataset.id; })[0]);
       };
     });
