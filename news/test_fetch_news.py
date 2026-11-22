@@ -117,7 +117,7 @@ class Tests(unittest.TestCase):
         self.assertEqual(st["kept"], 5)
         rows, st = self._rows("রাজধানীতে ককটেল বিস্ফোরণ", "")                    # only "the capital": whole-city pin to refine
         self.assertEqual(rows[0]["place_text"], "Dhaka (whole city/district — check location)")
-        self.assertEqual(rows[0]["radius_m"], 4000)
+        self.assertEqual(rows[0]["radius_m"], 2000)
         rows, st = self._rows("সিলেটে সড়ক দুর্ঘটনায় তিনজন নিহত", "মহাসড়কে বাস-ট্রাকের মুখোমুখি সংঘর্ষে তিনজন নিহত হয়েছেন।")
         self.assertEqual((rows[0]["type"], rows[0]["severity"]), ("accident", 3), rows)
         self.assertEqual(fn.classify("ককটেল বিস্ফোরণ মামলার রায় ঘোষণা", ""), None)
