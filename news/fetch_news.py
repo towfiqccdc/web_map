@@ -565,7 +565,7 @@ def locate(title, summary, geocoder):
         if pt:
             return {"lat": pt[0], "lng": pt[1],
                     "place_text": name + (" (district only — check location)" if district_only else ""),
-                    "radius_m": 8000 if district_only else 2000}
+                    "radius_m": 2000 if district_only else 800}
     return None
 
 
@@ -643,7 +643,7 @@ def mirpur_sections(text):
     def take(m):
         n = int(m.group(1).translate(BN_DIGITS))
         pt = MIRPUR_SECTIONS.get(n)
-        base = {"known": True, "home": "Dhaka", "radius_m": 1000 if pt else 1500, "pos": m.start()}
+        base = {"known": True, "home": "Dhaka", "radius_m": 600 if pt else 1000, "pos": m.start()}
         if pt:
             hits.append({**base, "lat": pt[0], "lng": pt[1], "place_text": f"Mirpur-{n}"})
         else:                                           # section we have no exact point for: say so, do not guess
@@ -712,7 +712,7 @@ def place_on_corridor(known, corridor):
             la, ln, km = snap_to_line(g["lat"], g["lng"], corridor["line"])
             if km <= 35:
                 base = g["place_text"].split(" (")[0]
-                g = {**g, "lat": la, "lng": ln, "radius_m": 1500,
+                g = {**g, "lat": la, "lng": ln, "radius_m": 1000,
                      "place_text": f"{corridor['name']}, {base} (on the highway — approximate, check location)"}
         out.append(g)
     return out
@@ -761,14 +761,14 @@ def find_known_places(title, summary, limit=5):
         return [{k: v for k, v in h.items() if k != "pos"} for h in pins]
     return [{"lat": g["lat"], "lng": g["lng"], "known": True, "home": home_district(g),
              "place_text": g["name"] + (" (whole city/district — check location)" if g["coarse"] else ""),
-             "radius_m": (4000 if g["name"] == "Dhaka" else 8000) if g["coarse"] else 1500} for g in chosen]
+             "radius_m": 2000 if g["coarse"] else 800} for g in chosen]
 
 
 # Score a candidate place. Higher wins. The numbers only need to rank things sensibly:
 #   how specific the place is  +  what part it plays in the story  +  where in the story it is named
 LEVEL_SCORE = {"area": 40, "union": 34, "upazila": 30, "city": 18, "district": 14}
 ROLE_SCORE = {"dateline": 30, "locative": 28, "neutral": 0, "origin": -45}
-LEVEL_RADIUS = {"area": 1500, "union": 2000, "upazila": 3000, "district": 8000}
+LEVEL_RADIUS = {"area": 800, "union": 1200, "upazila": 1500, "district": 2000}   # metres: smaller = more honest about how exact the spot is
 REFINE_KM = {"district": 45, "upazila": 15, "union": 8}
 
 
@@ -782,7 +782,7 @@ def known_hits(text):
         txt = f"Mirpur-{n}" if pt else f"Mirpur-{n} (exact block not in my list — check location)"
         out.append({"pos": m.start(), "end": m.end(), "name": f"Mirpur-{n}", "level": "area", "district": "Dhaka",
                     "lat": (pt or (23.8069, 90.3687))[0], "lng": (pt or (23.8069, 90.3687))[1],
-                    "place_text": txt, "radius_m": 1000 if pt else 1500})
+                    "place_text": txt, "radius_m": 600 if pt else 1000})
         return " " * len(m.group(0))
     text2 = RE_MIRPUR_N.sub(take, text)
     for g in GAZETTEER:
@@ -800,7 +800,7 @@ def known_hits(text):
             out.append({"pos": best[0], "end": best[1], "name": g["name"], "level": "city" if coarse else "area", "district": None,
                         "lat": g["lat"], "lng": g["lng"], "coarse": coarse,
                         "place_text": g["name"] + (" (whole city/district — check location)" if coarse else ""),
-                        "radius_m": (4000 if g["name"] == "Dhaka" else 8000) if coarse else 1500})
+                        "radius_m": 2000 if coarse else 800})
     return out
 
 
@@ -857,7 +857,7 @@ def analyse_story(title, summary, geocoder):
             for e in m["entries"]:
                 if e["level"] == "district":
                     cands.append({"pos": m["pos"], "end": m["end"], "name": e["name"], "level": "district", "district": e["district"],
-                                  "lat": e["lat"], "lng": e["lng"], "place_text": _official_text(e), "radius_m": 8000, "source": "official"})
+                                  "lat": e["lat"], "lng": e["lng"], "place_text": _official_text(e), "radius_m": 2000, "source": "official"})
         target = [d["district"] for d in named_all if d["role"] != "origin"]
         for e in eng.resolve(text, named=target or None):
             cands.append({"pos": e["pos"], "end": e["end"], "name": e["name"], "level": e["level"], "district": e["district"],
@@ -952,7 +952,7 @@ def _refine(loc, c, title, summary, geocoder, eng):
         tried += 1
         pt = geocoder.lookup(f"{name}, {ctx}")
         if pt and (not eng or eng.fits(pt[0], pt[1], [c["district"]])) and _km(pt[0], pt[1], c["lat"], c["lng"]) <= limit:
-            return {"lat": pt[0], "lng": pt[1], "place_text": f"{name}, {c['district']}", "radius_m": 1500, "known": False, "district": c["district"]}
+            return {"lat": pt[0], "lng": pt[1], "place_text": f"{name}, {c['district']}", "radius_m": 800, "known": False, "district": c["district"]}
     return None
 
 

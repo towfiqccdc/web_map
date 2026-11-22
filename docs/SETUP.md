@@ -105,3 +105,4 @@ To add a case you saw wrong: put one line in `news/test_locations.py` (`CASES`) 
 ## Keeping news
 - Waiting and rejected news older than **4 days** is deleted automatically (setting `NEWS_KEEP_DAYS`). Admin also hides older waiting items at once.
 - **Approved items are never deleted automatically.** They stay in the Active tab (an "ended" tag shows once their end date has passed; they then stop counting in route checks). Hover an approved item (always visible on phones) and press the 🗑 bin to delete it.
+- **Circle size (radius)** now follows how exact the place is: neighbourhood 800 m, Mirpur section 600 m, union 1.2 km, upazila 1.5 km, whole district/city 2 km. You can still change it in the Review form before approving.
