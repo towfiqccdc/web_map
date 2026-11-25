@@ -721,7 +721,11 @@ def place_on_corridor(known, corridor):
 
 
 # ------------------------------------------------------------------ stories about other countries
-FOREIGN = re.compile(r"\b(Iran|Iraq|Syria|Israel|Gaza|Palestin\w*|Lebanon|Yemen|Afghanistan|Pakistan|India|Indian|Nepal|Bhutan|Sri Lanka|Myanmar|"
+FOREIGN_OUTLETS = re.compile(r"\s[-–|]\s*(UrduPoint|Dawn|Geo News|Express Tribune|The News International|Times of India|Hindustan Times|NDTV|The Hindu|"
+                            r"Tribune India|India Today|Indian Express|Dainik Jagran|Dainik Bhaskar|Amar Ujala|Zee News|News18|Gulf News|Khaleej Times|"
+                            r"Arab News|Al Jazeera|Anadolu|Xinhua|Kathmandu Post|Colombo Gazette|Daily Mirror Sri Lanka)\b", re.I)
+FOREIGN = re.compile(r"\b(Uttar Pradesh|Kannauj|Rajasthan|Gujarat|Bihar|Maharashtra|West Bengal|Kerala|Tamil Nadu|Karnataka|Odisha|Haryana|Madhya Pradesh|"
+                     r"Lahore|Karachi|Islamabad|Peshawar|Quetta|Sindh|Balochistan|Khyber|Chak \d+|Iran|Iraq|Syria|Israel|Gaza|Palestin\w*|Lebanon|Yemen|Afghanistan|Pakistan|India|Indian|Nepal|Bhutan|Sri Lanka|Myanmar|"
                      r"Thailand|Malaysia|Indonesia|China|Japan|Korea|Russia|Ukraine|Turkey|Saudi|Egypt|Nigeria|Kenya|Ethiopia|Sudan|Mexico|"
                      r"Brazil|Peru|Philippines|Vietnam|Kolkata|Delhi|Mumbai|Assam|Tripura|Kashmir|Texas|California|Florida|London|Paris|"
                      r"US|U\.S\.|UK|U\.K\.)\b")
@@ -840,6 +844,8 @@ def analyse_story(title, summary, geocoder):
       9. stories about other countries (expatriates, "died in Saudi Arabia") are dropped
     """
     eng = places_mod.engine()
+    if FOREIGN_OUTLETS.search(title):                           # a foreign newspaper: the story is not about Bangladesh
+        return [], "abroad"
     title = clean_title(title)
     summary = (summary or "").replace("’", "'")
     full = f"{title}. {summary}"
@@ -884,6 +890,22 @@ def analyse_story(title, summary, geocoder):
         if eng and not c.get("district"):
             c["district"] = eng.district_at(c["lat"], c["lng"])
 
+    spans = _sentence_spans(text)
+    for c in cands:                                             # does the sentence itself describe an incident?
+        a_, b_ = _span_of(spans, c["pos"])
+        i_ = next((k for k, (x, y) in enumerate(spans) if x == a_), 0)
+        near = " ".join(text[x:y] for x, y in spans[max(0, i_ - 1):i_ + 2])        # a list of places often follows the sentence that says what happened
+        c["evown"] = c["pos"] < tl or bool(EVENT_RE.search(text[a_:b_]))
+        c["evsent"] = c["evown"] or bool(EVENT_RE.search(near))
+        c["_span"] = (a_, b_)
+    if eng:                                                     # a place must agree with the district written in ITS OWN sentence
+        def clash(c):
+            if c["level"] == "district":
+                return False
+            sd = [d["district"] for d in named_all if c["_span"][0] <= d["pos"] <= c["_span"][1] and d["role"] != "origin"]
+            return bool(sd) and not eng.fits(c["lat"], c["lng"], sd)
+        cands = [c for c in cands if not clash(c)]
+
     bd = [{"pos": c["pos"], "end": c["end"], "role": c["role"]} for c in cands]
     if story.is_abroad(full, bd, tl):
         return [], "abroad"
@@ -898,7 +920,7 @@ def analyse_story(title, summary, geocoder):
     if good:
         for c in good:
             c["score"] = (LEVEL_SCORE[c["level"]] + ROLE_SCORE[c["role"]] + (12 if c["pos"] < tl else 4 if c["pos"] < tl + 250 else 0)
-                          + (3 if c["source"] == "curated" else 0))
+                          + (3 if c["source"] == "curated" else 0) + (16 if c["evown"] else 8 if c["evsent"] else -12 if c["pos"] >= tl else 0))
         good.sort(key=lambda c: (-c["score"], c["pos"]))
         uniq, names = [], set()
         for c in good:                                               # the same place found twice (built-in + official): keep the best
@@ -911,11 +933,11 @@ def analyse_story(title, summary, geocoder):
         seen_d = {best["district"]}
         for c in good[1:]:
             in_title_list = c["pos"] < tl and c["role"] == "neutral" and c["level"] in ("city", "district", "upazila")
-            if c["district"] not in seen_d and (c["role"] in ("locative", "dateline") or in_title_list) and len(others) < 2:
+            if c["district"] not in seen_d and (c["role"] in ("locative", "dateline") or in_title_list) and (c["evsent"] or in_title_list) and len(others) < 2:
                 seen_d.add(c["district"])
                 others.append(c)
         if best["level"] in ("area", "union"):                      # a story naming several neighbourhoods gets one pin each
-            more = [c for c in good[1:] if c["level"] in ("area", "union") and c["district"] == best["district"]]
+            more = [c for c in good[1:] if c["level"] in ("area", "union") and c["district"] == best["district"] and c["evsent"]]
             chosen = sorted([best] + more, key=lambda c: c["pos"])[:5]
         else:
             chosen = [best]
@@ -924,11 +946,12 @@ def analyse_story(title, summary, geocoder):
         out = []
         for c in chosen:
             loc = {"lat": c["lat"], "lng": c["lng"], "place_text": c["place_text"], "radius_m": c["radius_m"], "known": True, "district": c["district"],
-                   "name": c["name"], "level": c["level"], "role": c["role"], "ev": _snippet(full, c["pos"], c["end"])}
+                   "name": c["name"], "level": c["level"], "role": c["role"], "ev": _snippet(full, c["pos"], c["end"]), "evsent": c["evsent"],
+                   "source_kind": c["source"]}
             if c["level"] in ("city", "district", "upazila", "union") and not c.get("refined"):
                 better = _refine(loc, c, title, summary, geocoder, eng)
                 if better:
-                    loc = {**better, "role": c["role"], "ev": loc["ev"] + " … " + better.get("ev", "")}
+                    loc = {**better, "role": c["role"], "ev": loc["ev"] + " … " + better.get("ev", ""), "evsent": c["evsent"]}
             if corridor and loc.get("known") and c["level"] in ("city", "district", "upazila", "union"):
                 loc = place_on_corridor([{**loc, "place_text": loc["place_text"] if "check" in loc["place_text"] else loc["place_text"] + " (check location)"}], corridor)[0]
             if corridor:
@@ -956,6 +979,28 @@ def analyse_story(title, summary, geocoder):
     one.setdefault("ev", one["place_text"])
     one.setdefault("district", eng.district_at(one["lat"], one["lng"]) if eng else None)
     return [one], None
+
+
+EVENT_RE = re.compile(r"\b(block\w*|torch\w*|set (?:on )?fire|set ablaze|ablaze|arson|vandali[sz]\w*|clash\w*|kill\w*|dead|died|injur\w*|"
+                      r"protest\w*|demonstrat\w*|rall(?:y|ies)|explo\w*|blast\w*|cocktail|bomb\w*|attack\w*|hijack\w*|robb\w*|mugg\w*|"
+                      r"crash\w*|collid\w*|collision|rams?|hit|struck|shot|gunfire|stab\w*|riot\w*|lathi|tear ?gas|halted|standstill|gridlock|"
+                      r"strike|hartal|shutdown|unrest|stage\w*)\b|ককটেল|বিস্ফোরণ|আগুন|অবরোধ|সংঘর্ষ|নিহত|আহত|দুর্ঘটনা|বিক্ষোভ", re.I)
+
+
+def _sentence_spans(text):
+    spans, start = [], 0
+    for m in re.finditer(r"(?<=[.!?।])\s+|\n+", text):
+        spans.append((start, m.start()))
+        start = m.end()
+    spans.append((start, len(text)))
+    return spans
+
+
+def _span_of(spans, pos):
+    for a, b in spans:
+        if a <= pos <= b:
+            return a, b
+    return 0, len(spans) and spans[-1][1]
 
 
 def _snippet(text, a, b):
@@ -1048,7 +1093,7 @@ def build_rows(items, geocoder, max_age_days, expiry_days, now=None, translator=
         full_text = f"{clean_title(it['title'])}. {it['summary']} {body}"
         tl = len(clean_title(it["title"]))
         t_locs, _ = analyse_story(it["title"], "", _NoWeb())                   # step 2: headline alone, read separately
-        ctx = {"eng": eng, "title_districts": {l.get("district") for l in t_locs if l.get("district")},
+        ctx = {"eng": eng, "title_districts": {l.get("district") for l in t_locs if l.get("district") and l.get("level") != "highway"},
                "named": named_districts(full_text, tl), "body_read": bool(body), "date_ok": bool(art.get("published")),
                "critical": bool(c.get("planned") or BLOCKAGE.search(full_text))}
         for loc in locs:
