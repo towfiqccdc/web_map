@@ -106,3 +106,15 @@ To add a case you saw wrong: put one line in `news/test_locations.py` (`CASES`) 
 - Waiting and rejected news older than **4 days** is deleted automatically (setting `NEWS_KEEP_DAYS`). Admin also hides older waiting items at once.
 - **Approved items are never deleted automatically.** They stay in the Active tab (an "ended" tag shows once their end date has passed; they then stop counting in route checks). Hover an approved item (always visible on phones) and press the 🗑 bin to delete it.
 - **Circle size (radius)** now follows how exact the place is: neighbourhood 800 m, Mirpur section 600 m, union 1.2 km, upazila 1.5 km, whole district/city 2 km. You can still change it in the Review form before approving.
+
+## Checks before a pin reaches the map
+For every story the job (1) opens the article itself and reads its real publish date and first paragraphs (Google News only shows the day it listed the story, and the headline alone usually names no street or town), then (2) finds the places in the headline and the article separately, and (3) runs these checks on each pin:
+1. the pin is inside Bangladesh and inside a district border;
+2. the place is actually written in the story, and the story says it happened *there* (not "from X");
+3. the pin is inside a district the story names;
+4. the headline read alone agrees with the article about the district;
+5. the pin is precise (neighbourhood, union, upazila or a landmark found on the map), not just a whole district;
+6. if a highway is named, the pin is on or near it;
+7. the real publish date was read.
+
+A failed check, or three warnings, sends the story to the **Held** tab: it is not on the map for anyone. Stories about blockades or road closures are never hidden; they are shown as "partly verified" with the ⚠ check spot flag. Each shown item has a **Why this spot** note with the sentence it came from and the result of each check. Held items are re-checked from scratch every hour and deleted after 4 days.
