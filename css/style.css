@@ -246,3 +246,6 @@
 
 .pop-del{border:1px solid #fda29b;background:#fef3f2;color:#b42318;border-radius:8px;padding:5px 10px;font-weight:700;font-size:12px;cursor:pointer}
 .pop-del:hover{background:#fee4e2}
+
+.pin-mark{width:24px;height:24px;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:13px;line-height:1}
+.pin-mark.warn{border-color:#fff;outline:2px solid #b54708;color:#fff;font-size:12px}

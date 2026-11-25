@@ -288,8 +288,16 @@
     if (tab !== 'pending' && tab !== 'active' && tab !== 'held') return;
     tabRows().filter(itemOk).forEach(function (r) {
       var fill = tab === 'held' ? '#d92d20' : tab === 'pending' ? '#f79009' : isEnded(r) ? '#98a2b3' : (COLORS[r.severity] || COLORS[2]);
+      var mark = tab === 'active' ? '' : flagged(r) ? '⚠' : (r.confidence === 'high' ? '✓' : '');          // ⚠ = check this spot, ✓ = verified
+      var tip = (tab === 'pending' ? 'Pending: ' : tab === 'held' ? 'Held: ' : '') + r.title + (mark === '⚠' ? '  (⚠ check spot)' : '');
+      if (mark) {
+        L.marker([r.lat, r.lng], { icon: L.divIcon({ className: '', iconSize: [24, 24], iconAnchor: [12, 12],
+            html: '<div class="pin-mark ' + (mark === '⚠' ? 'warn' : 'ok') + '" style="background:' + fill + '">' + mark + '</div>' }) })
+          .on('click', function () { edit(r); }).bindTooltip(tip).addTo(pendingLayer);
+        return;
+      }
       L.circleMarker([r.lat, r.lng], { radius: 9, color: '#fff', weight: 2, fillColor: fill, fillOpacity: 1 })
-        .on('click', function () { edit(r); }).bindTooltip((tab === 'pending' ? 'Pending: ' : tab === 'held' ? 'Held: ' : '') + r.title).addTo(pendingLayer);
+        .on('click', function () { edit(r); }).bindTooltip(tip).addTo(pendingLayer);
     });
   }
 
