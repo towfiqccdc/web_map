@@ -16,8 +16,12 @@ create table if not exists public.risk_areas (
   source_url  text unique,                    -- news link; unique so one article is never added twice
   place_text  text,                           -- the place name the news job matched (for you to verify)
   title_original text,                        -- Bangla headline, when the title above was translated to English
-  status      text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
+  status      text not null default 'pending' check (status in ('pending', 'approved', 'rejected', 'held')),   -- held = failed the automatic checks, never shown
   happened_on date,
+  confidence  text check (confidence in ('high','medium','low')),   -- result of the news job's verification checks
+  evidence    text,                           -- the sentence that names the place
+  checks      text,                           -- which checks passed / warned
+  body_read   boolean not null default false, -- true when the article text itself was read
   created_at  timestamptz not null default now(),
   expires_at  timestamptz                     -- after this the risk stops affecting routes
 );

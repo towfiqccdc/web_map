@@ -32,10 +32,12 @@ import xml.etree.ElementTree as ET
 from email.utils import parsedate_to_datetime
 
 try:                                    # run as `python news/fetch_news.py` or imported as news.fetch_news
-    from . import places as places_mod, story
+    from . import places as places_mod, story, verify, article
 except ImportError:
     import places as places_mod
     import story
+    import verify
+    import article
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 USER_AGENT = "web_map-road-safety/1.0 (+https://github.com/towfiqccdc/web_map)"
@@ -354,7 +356,7 @@ STOP = {"The", "A", "An", "On", "In", "At", "Police", "Bus", "Truck", "Two", "Th
 
 CAP = r"[A-Z][\w'’-]+"
 LINEAR = r"(?:[Hh]ighway|[Ee]xpressway|[Bb]ypass|[Rr]oad|[Ss]treet)"
-POINT_SUFFIX = r"(?:[Bb]ridge|[Ff]lyover|[Uu]pazila|Bazar|Bazaar|[Ii]ntersection|[Cc]rossing|Chattar|Mor|Bus Stand)"
+POINT_SUFFIX = r"(?:[Bb]ridge|[Ff]lyover|[Uu]pazila|Bazar|Bazaar|[Ii]ntersection|[Cc]rossing|Chattar|Mor|Bus Stand|College|University|Medical College|Hospital|School|Madrasa|Institute|Stadium|Airport|Station|Market|Park|Mosque|Mandir|Ghat|Terminal|Cantonment|Jail|Court|Port|Tower|Square|Circle)"
 RE_POINT = re.compile(r"\b(" + CAP + r"(?:[ -]" + CAP + r"){0,2}\s+" + POINT_SUFFIX + r")\b")
 RE_LINEAR = re.compile(r"\b(" + CAP + r"(?:[ -]" + CAP + r"){0,2}\s+(?:[Hh]ighway|[Ee]xpressway|[Bb]ypass))\b")
 RE_PREP = re.compile(r"\b(?:at|in|near|on|along|outside|beside)\s+(" + CAP + r"(?:\s+" + CAP + r"){0,2})(\s+" + LINEAR + r")?")
@@ -921,13 +923,17 @@ def analyse_story(title, summary, geocoder):
         corridor = find_corridor(full)
         out = []
         for c in chosen:
-            loc = {"lat": c["lat"], "lng": c["lng"], "place_text": c["place_text"], "radius_m": c["radius_m"], "known": True, "district": c["district"]}
+            loc = {"lat": c["lat"], "lng": c["lng"], "place_text": c["place_text"], "radius_m": c["radius_m"], "known": True, "district": c["district"],
+                   "name": c["name"], "level": c["level"], "role": c["role"], "ev": _snippet(full, c["pos"], c["end"])}
             if c["level"] in ("city", "district", "upazila", "union") and not c.get("refined"):
                 better = _refine(loc, c, title, summary, geocoder, eng)
                 if better:
-                    loc = better
+                    loc = {**better, "role": c["role"], "ev": loc["ev"] + " … " + better.get("ev", "")}
             if corridor and loc.get("known") and c["level"] in ("city", "district", "upazila", "union"):
                 loc = place_on_corridor([{**loc, "place_text": loc["place_text"] if "check" in loc["place_text"] else loc["place_text"] + " (check location)"}], corridor)[0]
+            if corridor:
+                loc["corridor"] = corridor["name"]
+                loc["corridor_km"] = snap_to_line(loc["lat"], loc["lng"], corridor["line"])[2]
             out.append(loc)
         return out, None
 
@@ -935,10 +941,25 @@ def analyse_story(title, summary, geocoder):
     if BN_CHARS.search(full):
         return [], "no_place"
     one = locate(title, summary, geocoder)
+    corridor = find_corridor(full)
+    if not one and corridor:                                    # "Dhaka-Aricha highway blocked", no town named: middle of the highway, flagged
+        la, ln = corridor["line"][len(corridor["line"]) // 2]
+        return [{"lat": la, "lng": ln, "place_text": f"{corridor['name']} (exact spot not stated — check location)", "radius_m": 2000,
+                 "known": True, "district": eng.district_at(la, ln) if eng else None, "name": corridor["name"], "level": "highway",
+                 "role": "neutral", "ev": corridor["name"], "corridor": corridor["name"], "corridor_km": 0.0}], None
     if not one:
         return [], "no_place"
     one["known"] = False
+    one.setdefault("level", "district" if "district only" in one["place_text"] else "landmark")
+    one.setdefault("name", one["place_text"].split(",")[0])
+    one.setdefault("role", "locative")
+    one.setdefault("ev", one["place_text"])
+    one.setdefault("district", eng.district_at(one["lat"], one["lng"]) if eng else None)
     return [one], None
+
+
+def _snippet(text, a, b):
+    return re.sub(r"\s+", " ", text[max(0, a - 50):b + 60]).strip()
 
 
 def _refine(loc, c, title, summary, geocoder, eng):
@@ -952,7 +973,8 @@ def _refine(loc, c, title, summary, geocoder, eng):
         tried += 1
         pt = geocoder.lookup(f"{name}, {ctx}")
         if pt and (not eng or eng.fits(pt[0], pt[1], [c["district"]])) and _km(pt[0], pt[1], c["lat"], c["lng"]) <= limit:
-            return {"lat": pt[0], "lng": pt[1], "place_text": f"{name}, {c['district']}", "radius_m": 800, "known": False, "district": c["district"]}
+            return {"lat": pt[0], "lng": pt[1], "place_text": f"{name}, {c['district']}", "radius_m": 800, "known": False, "district": c["district"],
+                    "name": name, "level": "landmark", "ev": _snippet(f"{title}. {summary}", f"{title}. {summary}".find(name), f"{title}. {summary}".find(name) + len(name))}
     return None
 
 
@@ -969,10 +991,23 @@ def _km(lat1, lng1, lat2, lng2):
     return 12742 * asin(sqrt(h))
 
 
-def build_rows(items, geocoder, max_age_days, expiry_days, now=None, translator=None):
+MAX_ARTICLES_PER_RUN = 70
+
+
+def named_districts(text, title_len):
+    eng = places_mod.engine()
+    if not eng:
+        return []
+    t = blank_routes(text)
+    return [m["entries"][0]["district"] for m in eng.mentions(t)
+            if m["entries"][0]["level"] == "district" and story.role_of(t, m["pos"], m["end"], title_len) != "origin"]
+
+
+def build_rows(items, geocoder, max_age_days, expiry_days, now=None, translator=None, reader=None, known_urls=()):
     """Turn feed items into rows ready for the risk_areas table. Returns (rows, stats)."""
     now = now or dt.datetime.now(dt.timezone.utc)
-    stats = {"seen": 0, "too_old": 0, "not_incident": 0, "no_place": 0, "duplicate": 0, "kept": 0}
+    stats = {"seen": 0, "too_old": 0, "not_incident": 0, "no_place": 0, "duplicate": 0, "kept": 0, "held": 0, "articles_read": 0}
+    eng, read_budget = places_mod.engine(), MAX_ARTICLES_PER_RUN
     rows, seen_urls, seen_keys = [], set(), set()
     for it in items:
         stats["seen"] += 1
@@ -987,7 +1022,18 @@ def build_rows(items, geocoder, max_age_days, expiry_days, now=None, translator=
         if not c:
             stats["not_incident"] += 1
             continue
-        locs, why = analyse_story(it["title"], it["summary"], geocoder)
+        art = {}
+        if reader and read_budget > 0 and it["link"] not in known_urls:          # step 1: read the article itself
+            read_budget -= 1
+            art = reader(it["link"]) or {}
+            stats["articles_read"] += 1 if art else 0
+            if art.get("published"):                                              # the real date beats Google's listing date
+                it["published"] = art["published"]
+                if (now - it["published"]).days > max_age_days:
+                    stats["too_old"] += 1
+                    continue
+        body = art.get("text") or ""
+        locs, why = analyse_story(it["title"], (it["summary"] + " " + body).strip(), geocoder)
         if why == "abroad":
             stats["not_incident"] += 1
             log(f"   outside Bangladesh, skipped: {it['title'][:90]}")
@@ -999,6 +1045,12 @@ def build_rows(items, geocoder, max_age_days, expiry_days, now=None, translator=
             continue
         happened = (it["published"] or now).date().isoformat()
         added = 0
+        full_text = f"{clean_title(it['title'])}. {it['summary']} {body}"
+        tl = len(clean_title(it["title"]))
+        t_locs, _ = analyse_story(it["title"], "", _NoWeb())                   # step 2: headline alone, read separately
+        ctx = {"eng": eng, "title_districts": {l.get("district") for l in t_locs if l.get("district")},
+               "named": named_districts(full_text, tl), "body_read": bool(body), "date_ok": bool(art.get("published")),
+               "critical": bool(c.get("planned") or BLOCKAGE.search(full_text))}
         for loc in locs:
             key = (loc["place_text"].lower(), happened, c["type"])      # same story from several outlets
             if key in seen_keys or (not loc.get("known") and any(
@@ -1006,6 +1058,8 @@ def build_rows(items, geocoder, max_age_days, expiry_days, now=None, translator=
                     _km(r["lat"], r["lng"], loc["lat"], loc["lng"]) < 4 for r in rows)):
                 continue
             seen_keys.add(key)
+            checks = verify.run_checks(loc, ctx)                              # steps 3-8: independent checks on the pin
+            conf, verdict, _issues = verify.grade(checks, ctx["critical"])
             many = len(locs) > 1
             title_en, original = it["title"], None
             if BN_CHARS.search(title_en):                       # Bangla headline -> English (the boss reads English/Chinese)
@@ -1021,10 +1075,14 @@ def build_rows(items, geocoder, max_age_days, expiry_days, now=None, translator=
                 "lat": round(loc["lat"], 6), "lng": round(loc["lng"], 6), "radius_m": loc["radius_m"],
                 "source": "news", "source_url": it["link"] + ("#" + slug if many else ""),
                 "place_text": loc["place_text"][:120],
-                "status": "pending", "happened_on": happened,
+                "status": "pending" if verdict == "show" else "held", "happened_on": happened,
+                "confidence": conf, "evidence": (loc.get("ev") or "")[:300], "checks": verify.summary(checks)[:900], "body_read": bool(body),
                 "expires_at": (now + dt.timedelta(days=expiry_days)).isoformat(),
             })
             added += 1
+            if verdict != "show":
+                stats["held"] += 1
+                log(f"   held back ({'; '.join(_issues)[:120]}): {it['title'][:70]}")
         if added:
             stats["kept"] += added
         else:
@@ -1062,8 +1120,9 @@ def cleanup_old(request, keep_days=4, today=None):
     """Delete waiting and rejected news older than keep_days. Approved items are NEVER touched."""
     today = today or dt.date.today()
     cutoff = (today - dt.timedelta(days=keep_days)).isoformat()
-    gone = request("DELETE", f"/rest/v1/risk_areas?source=eq.news&status=in.(pending,rejected)&happened_on=lt.{cutoff}&select=id",
+    gone = request("DELETE", f"/rest/v1/risk_areas?source=eq.news&status=in.(pending,rejected,held)&happened_on=lt.{cutoff}&select=id",
                    None, {"Prefer": "return=representation"}) or []
+    request("DELETE", "/rest/v1/risk_areas?source=eq.news&status=eq.held", None, {"Prefer": "return=minimal"})   # held items are re-checked from scratch every run
     return len(gone)
 
 
@@ -1076,7 +1135,12 @@ def audit_row(row):
     """Why a stored WAITING row looks wrong ("abroad" / "wrong district"), or None if it is fine.
     Uses only the headline, so it costs no web lookups. Rows the admin has approved are never audited."""
     eng = places_mod.engine()
-    title = clean_title(row.get("title_original") or row.get("title") or "")
+    if row.get("body_read"):                                   # verified against the full article already
+        return None
+    title = row.get("title_original") or row.get("title") or ""
+    if "#" in (row.get("source_url") or ""):                   # several-pin stories carry a "Place: " prefix we added ourselves
+        title = title.split(": ", 1)[-1]
+    title = clean_title(title)
     if not title:
         return None
     locs, why = analyse_story(title, "", _NoWeb())
@@ -1094,7 +1158,7 @@ def audit_row(row):
 def audit_pending(request):
     """Self-heal: delete waiting news whose pin is in the wrong district or that is about another country.
     The normal run right after re-adds the story (if it is still in the feeds) with the current rules."""
-    rows = request("GET", "/rest/v1/risk_areas?select=id,title,title_original,lat,lng&source=eq.news&status=eq.pending&limit=1000") or []
+    rows = request("GET", "/rest/v1/risk_areas?select=id,title,title_original,lat,lng,source_url,body_read&source=eq.news&status=eq.pending&limit=1000") or []
     bad = [(r, audit_row(r)) for r in rows]
     bad = [(r, why) for r, why in bad if why]
     for r, why in bad:
@@ -1135,13 +1199,24 @@ def main(argv=None):
             log(f"Housekeeping: deleted {removed_old} old waiting/rejected item(s), removed {audited} wrongly placed item(s) to redo them.")
         except Exception as e:
             log(f"Housekeeping skipped: {type(e).__name__}: {e}")
-    rows, stats = build_rows(items, Geocoder(), max_age, expiry,
+    known = set()
+    if not args.dry_run:
+        try:
+            got = supabase_request("GET", "/rest/v1/risk_areas?select=source_url&limit=3000") or []
+            known = {(g.get("source_url") or "").split("#")[0] for g in got}
+        except Exception as e:
+            log(f"Could not list stored links ({e}); every article will be read again.")
+
+    def reader(link):
+        time.sleep(0.4)
+        return article.read(link)
+    rows, stats = build_rows(items, Geocoder(), max_age, expiry, reader=reader, known_urls=known,
                              translator=Translator(email=os.environ.get("MYMEMORY_EMAIL")))
     log(f"\nFeeds ok: {ok}, failed: {len(failed)}   |   {stats}")
 
     if args.dry_run:
         for r in rows:
-            log(f" + [{r['type']} sev{r['severity']}] {r['title'][:80]}  @ {r['place_text']} ({r['lat']}, {r['lng']})")
+            log(f" + [{r['status']} {r['confidence']}] [{r['type']} sev{r['severity']}] {r['title'][:80]}  @ {r['place_text']} ({r['lat']}, {r['lng']})")
         return 0 if ok else 1
 
     if rows:
@@ -1156,6 +1231,7 @@ def main(argv=None):
         with open(summary, "a", encoding="utf-8") as f:
             f.write(f"### Daily news check\n- Feeds ok: **{ok}**, failed: **{len(failed)}**\n"
                     f"- New pending risk areas: **{len(rows)}**\n- Details: `{stats}`\n"
+                    f"- Held back by verification (not on the map; see the Held tab): **{stats.get('held', 0)}**, articles read: **{stats.get('articles_read', 0)}**\n"
                     f"- Housekeeping: old items deleted **{removed_old}**, wrongly placed items redone **{audited}**\n")
             if UNMAPPED:
                 f.write("- Incidents with no usable place (not mapped, check by hand if they matter, e.g. highway-only reports):\n")

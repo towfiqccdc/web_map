@@ -233,3 +233,7 @@
 @media (hover:none){.ap-del{opacity:1}}
 .pill.ended{background:#eaecf0;color:#475467}
 .pill.warn{background:#fff4d6;color:#93370d}
+
+.pill.conf-high{background:#d1fadf;color:#05603a}.pill.conf-medium{background:#fef0c7;color:#93370d}.pill.conf-low{background:#fee4e2;color:#b42318}
+.ap-checks{margin-top:4px;font-size:11px;color:#475467}.ap-checks summary{cursor:pointer;color:#175cd3;font-weight:600}
+.ap-checks div{padding:1px 0}.ap-ev{font-style:italic;color:#344054;background:#f2f4f7;border-radius:6px;padding:3px 6px;margin:3px 0}

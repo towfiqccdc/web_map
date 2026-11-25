@@ -73,7 +73,7 @@ class Tests(unittest.TestCase):
         geo = fn.Geocoder(sleep=0, fetch=fake_fetch)
         rows, st = fn.build_rows(fn.parse_feed(RSS.encode()), geo, 2, 30, now=NOW)
         titles = [r["title"] for r in rows]
-        self.assertEqual(st, {"seen": 7, "too_old": 1, "not_incident": 2, "no_place": 1, "duplicate": 1, "kept": 2}, st)
+        self.assertEqual(st, {"seen": 7, "too_old": 1, "not_incident": 2, "no_place": 1, "duplicate": 1, "kept": 2, "held": 0, "articles_read": 0}, st)
         crash = [r for r in rows if r["type"] == "accident"][0]
         self.assertEqual((crash["severity"], crash["status"], crash["source"]), (3, "pending", "news"))
         self.assertEqual(crash["lat"], 23.8583)      # Madhabdi comes from the built-in place list
@@ -330,12 +330,12 @@ class Tests(unittest.TestCase):
             with mock.patch.dict(os.environ, {"SUPABASE_URL": "https://x.supabase.co", "SUPABASE_SERVICE_KEY": "k"}), \
                  mock.patch.object(fn, "http_get", get), mock.patch.object(fn, "supabase_request", req), \
                  mock.patch.object(fn, "Geocoder", lambda: geo), \
-                 mock.patch.object(fn, "build_rows", lambda i, g, a, e, translator=None: real_build(i, g, a, e, now=NOW, translator=translator)):
+                 mock.patch.object(fn, "build_rows", lambda i, g, a, e, translator=None, **kw: real_build(i, g, a, e, now=NOW, translator=translator)):
                 code = fn.main(["--feeds", feeds])
         finally:
             os.remove(feeds)
         self.assertEqual(code, 0)                           # one feed died, the run still succeeds
-        self.assertTrue(any("status=in.(pending,rejected)" in x[0] for x in sent))     # old waiting news cleaned up first
+        self.assertTrue(any("status=in.(pending,rejected,held)" in x[0] for x in sent))     # old waiting news cleaned up first
         posts = [x for x in sent if "on_conflict" in x[0]]
         self.assertEqual(len(posts), 1)
         path, body, extra = posts[0]

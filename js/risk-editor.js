@@ -63,6 +63,7 @@
           '<button data-t="new" class="active">+ Risk</button>' +
           '<button data-t="pending">Review <span id="apCP"></span></button>' +
           '<button data-t="active">Active <span id="apCA"></span></button>' +
+          '<button data-t="held" title="Stories the automatic checks could not place with confidence. Not shown on the map for anyone.">Held <span id="apCH"></span></button>' +
           '<button data-t="svc">Services</button>' +
         '</div>' +
         '<div id="apCities" class="city-tabs hidden"></div>' +
@@ -248,11 +249,11 @@
       });
       return;
     }
-    if (tab !== 'pending' && tab !== 'active') return;
+    if (tab !== 'pending' && tab !== 'active' && tab !== 'held') return;
     tabRows().filter(itemOk).forEach(function (r) {
-      var fill = tab === 'pending' ? '#f79009' : isEnded(r) ? '#98a2b3' : (COLORS[r.severity] || COLORS[2]);
+      var fill = tab === 'held' ? '#d92d20' : tab === 'pending' ? '#f79009' : isEnded(r) ? '#98a2b3' : (COLORS[r.severity] || COLORS[2]);
       L.circleMarker([r.lat, r.lng], { radius: 9, color: '#fff', weight: 2, fillColor: fill, fillOpacity: 1 })
-        .on('click', function () { edit(r); }).bindTooltip((tab === 'pending' ? 'Pending: ' : '') + r.title).addTo(pendingLayer);
+        .on('click', function () { edit(r); }).bindTooltip((tab === 'pending' ? 'Pending: ' : tab === 'held' ? 'Held: ' : '') + r.title).addTo(pendingLayer);
     });
   }
 
@@ -301,10 +302,10 @@
   function catName(k) { for (var i = 0; i < CATS.length; i++) if (CATS[i][0] === k) return CATS[i][1]; return 'Other'; }
   function catOk(r) { return cat === 'all' || catsOf(r).indexOf(cat) > -1; }
   function itemOk(r) { return cityOk(r) && catOk(r); }
-  function tabRows() { return rows.filter(function (r) { return tab === 'pending' ? (r.status === 'pending' && isFresh(r)) : r.status === 'approved'; }); }
+  function tabRows() { return rows.filter(function (r) { return tab === 'pending' ? (r.status === 'pending' && isFresh(r)) : tab === 'held' ? (r.status === 'held' && isFresh(r)) : r.status === 'approved'; }); }
   function renderCities() {
     var box = $('apCities');
-    if (tab !== 'pending' && tab !== 'active') { box.classList.add('hidden'); return; }
+    if (tab !== 'pending' && tab !== 'active' && tab !== 'held') { box.classList.add('hidden'); return; }
     var all = tabRows(), counts = {};
     all.forEach(function (r) { var c = cityOf(r); counts[c] = (counts[c] || 0) + 1; });
     if (city !== 'all' && !counts[city]) city = 'all';
@@ -325,7 +326,7 @@
 
   function renderCats() {
     var box = $('apCats');
-    if (tab !== 'pending' && tab !== 'active') { box.classList.add('hidden'); return; }
+    if (tab !== 'pending' && tab !== 'active' && tab !== 'held') { box.classList.add('hidden'); return; }
     var base = tabRows().filter(cityOk), counts = {};      // counts follow the city you picked
     base.forEach(function (r) { catsOf(r).forEach(function (k) { counts[k] = (counts[k] || 0) + 1; }); });
     if (cat !== 'all' && !counts[cat]) cat = 'all';
@@ -349,6 +350,7 @@
       if (r.error) { say(r.error.message, 'err'); return; }
       rows = r.data || [];
       $('apCP').textContent = '(' + rows.filter(function (x) { return x.status === 'pending' && isFresh(x); }).length + ')';
+      $('apCH').textContent = '(' + rows.filter(function (x) { return x.status === 'held' && isFresh(x); }).length + ')';
       $('apCA').textContent = '(' + rows.filter(function (x) { return x.status === 'approved'; }).length + ')';
       renderList();
       drawPending();
@@ -410,19 +412,22 @@
       return;
     }
     var items = tabRows().filter(itemOk);
-    if (!items.length) { box.innerHTML = '<div class="ap-empty">' + (tab === 'pending' ? 'Nothing waiting for approval.' : 'No active risk areas.') + '</div>'; return; }
+    if (!items.length) { box.innerHTML = '<div class="ap-empty">' + (tab === 'pending' ? 'Nothing waiting for approval.' : tab === 'held' ? 'Nothing held back.' : 'No active risk areas.') + '</div>'; return; }
     box.innerHTML = items.map(function (r) {
       var src = safeUrl(r.source_url);
       return '<div class="ap-item' + (current && current.id === r.id ? ' sel' : '') + '" data-id="' + esc(r.id) + '">' +
         '<span class="pill ' + esc(r.source) + '">' + esc(r.source) + '</span><span class="pill">' + esc(r.type) + ' · sev ' + esc(r.severity) + '</span>' +
         catsOf(r).slice(0, 3).map(function (k) { return '<span class="pill cat">' + esc(catName(k)) + '</span>'; }).join('') +
         (isEnded(r) ? '<span class="pill ended" title="Past its end date: no longer counted in route checks">ended</span>' : '') +
+        (r.confidence ? '<span class="pill conf-' + esc(r.confidence) + '" title="How many independent checks agreed on this place">' + (r.confidence === 'high' ? '✓ verified' : r.confidence === 'medium' ? '◐ partly verified' : '✗ not verified') + '</span>' : '') +
         (/check/i.test(r.place_text || '') ? '<span class="pill warn" title="The exact spot is not certain. Check it on the map before approving.">⚠ check spot</span>' : '') +
         (tab === 'active' ? '<button type="button" class="ap-del" data-del="' + esc(r.id) + '" title="Delete this approved item">🗑</button>' : '') +
         '<div class="ap-titlerow"><b>' + esc(r.title) + '</b>' +
         (src ? '<a class="ap-link" href="' + esc(src) + '" target="_blank" rel="noopener noreferrer" title="Open the news report">↗ news</a>' : '') + '</div>' +
         '<small>' + (r.place_text ? 'Matched place: ' + esc(r.place_text) + ' · ' : '') + esc((r.happened_on || r.created_at || '').slice(0, 10)) + '</small>' +
-        (r.title_original ? '<small class="ap-orig">Original: ' + esc(r.title_original) + '</small>' : '') + '</div>';
+        (r.title_original ? '<small class="ap-orig">Original: ' + esc(r.title_original) + '</small>' : '') +
+        (r.checks ? '<details class="ap-checks"><summary>Why this spot</summary>' + (r.evidence ? '<div class="ap-ev">“…' + esc(r.evidence) + '…”</div>' : '') +
+          esc(r.checks).split('; ').map(function (x) { return '<div>' + x + '</div>'; }).join('') + '</details>' : '') + '</div>';
     }).join('');
     box.querySelectorAll('.ap-del').forEach(function (b) {
       b.onclick = function (ev) {
@@ -467,9 +472,9 @@
 
   function edit(r) {
     current = r; show('apEditor', true);
-    $('sideTitle').textContent = $('apEdTitle').textContent = r.status === 'pending' ? 'Review this report' : 'Edit active risk';
+    $('sideTitle').textContent = $('apEdTitle').textContent = r.status !== 'approved' ? 'Review this report' : 'Edit active risk';
     fill(r); clearEditorMap(); setPoint([r.lat, r.lng], true);
-    buttons(r.status === 'pending'
+    buttons(r.status !== 'approved'
       ? [['approve', 'ok', 'Approve'], ['reject', 'bad', 'Reject']]
       : [['save', 'blue', 'Save changes'], ['expire', '', 'Stop counting now'], ['delete', 'bad', 'Delete']]);
     renderList();

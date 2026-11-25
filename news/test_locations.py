@@ -107,7 +107,7 @@ class Housekeeping(unittest.TestCase):
         method, path = calls[0]
         self.assertEqual(method, "DELETE")
         self.assertIn("happened_on=lt.2026-11-18", path)
-        self.assertIn("status=in.(pending,rejected)", path)
+        self.assertIn("status=in.(pending,rejected,held)", path)
         self.assertNotIn("approved", path)                       # approved items are never deleted
 
     def test_audit_removes_wrong_district_and_abroad_but_keeps_good(self):
