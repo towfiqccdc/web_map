@@ -93,7 +93,7 @@
           '<label for="fHappened">Date it happened</label><input id="fHappened" type="date">' +
           '<div class="ap-hint">📍 <span id="fLoc">Tap the map to choose the place (drag the pin to adjust)</span></div>' +
           '<div class="ap-coord"><label for="fCoord">Or type the coordinates (latitude, longitude)</label>' +
-          '<div class="ap-row2"><input id="fCoord" inputmode="decimal" placeholder="e.g. 23.8583, 90.2667" autocomplete="off"><button id="fCoordGo" class="btn blue" type="button">Move pin</button></div>' +
+          '<div class="ap-row2"><input id="fCoord" inputmode="decimal" placeholder="e.g. 23.8583, 90.2667" autocomplete="off"><button id="fCoordGo" class="btn blue" type="button">Move pin</button><button id="fCoordSave" class="btn ok" type="button" title="Save only the new position. The item stays waiting / approved as it is.">Save position</button></div>' +
           '<small>Tip: in Google Maps, tap and hold a spot, then tap the numbers to copy them and paste here.</small></div>' +
           '<div class="ap-hint" id="fSource"></div>' +
           '<div class="ap-hint ap-orig" id="fOrig"></div>' +
@@ -112,6 +112,7 @@
     document.body.appendChild(side);
     $('sideClose').onclick = closeSide;
     $('fCoordGo').onclick = applyCoord;
+    $('fCoordSave').onclick = savePosition;
     $('fCoord').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); applyCoord(); } };
 
     $('apClose').onclick = close;
@@ -260,6 +261,22 @@
     var p = parseCoord($('fCoord').value);
     if (!p) { say('Coordinates must be inside Bangladesh, like 23.8583, 90.2667', 'err'); return; }
     say(''); setPoint(p, true);
+  }
+
+  // Save only the position (typed or dragged); the item keeps its status, so approving is a separate choice.
+  function savePosition() {
+    if (!current || tab === 'svc') return;
+    if ($('fCoord').value.trim()) { var p = parseCoord($('fCoord').value); if (!p) { say('Coordinates must be inside Bangladesh, like 23.8583, 90.2667', 'err'); return; } setPoint(p, true); }
+    if (!point) { say('Tap the map or type coordinates first.', 'err'); return; }
+    var id = current.id, fix = { lat: point[0], lng: point[1], place_text: 'Set by admin (coordinates)', confidence: 'high', checks: '✓ position set by the admin', evidence: null };
+    say('Saving…');
+    sb.from('risk_areas').update(fix).eq('id', id).then(function (r) {
+      if (r.error) { say(r.error.message, 'err'); return; }
+      Object.assign(current, fix); $('fCoord').value = '';
+      say('Position saved ✓', 'good');
+      loadRows();
+      if (window.PlannerAPI) window.PlannerAPI.reloadRisks();
+    });
   }
 
   function drawCircle() {

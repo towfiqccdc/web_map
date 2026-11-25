@@ -240,7 +240,7 @@
 
 .ap-coord{margin:8px 0;padding:8px;border:1px dashed #b2ddff;border-radius:10px;background:#f5faff}
 .ap-coord label{display:block;font-weight:600;font-size:12px;margin-bottom:4px}.ap-coord small{color:#667085;font-size:11px}
-.ap-row2{display:flex;gap:6px}.ap-row2 input{flex:1;min-width:0}.ap-row2 .btn{padding:6px 10px;white-space:nowrap}
+.ap-row2{display:flex;gap:6px;flex-wrap:wrap}.ap-row2 input{flex:1;min-width:0}.ap-row2 .btn{padding:6px 10px;white-space:nowrap}
 .ap-flagbtn{width:100%;margin:0 0 8px;padding:7px 10px;border:1px solid #fedf89;background:#fffaeb;color:#93370d;border-radius:10px;font-weight:600;font-size:12px;cursor:pointer}
 .ap-flagbtn.on{background:#fef0c7}
 
@@ -249,3 +249,5 @@
 
 .pin-mark{width:24px;height:24px;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:13px;line-height:1}
 .pin-mark.warn{border-color:#fff;outline:2px solid #b54708;color:#fff;font-size:12px}
+
+.ap-row2 .btn.ok{background:#12b76a;color:#fff;border-color:#12b76a}
