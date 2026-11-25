@@ -63,6 +63,15 @@ def run_checks(loc, ctx):
     else:
         out.append(("warn", "only the headline was available"))
 
+    # 4b. The place must sit in a sentence that describes the incident (not background, an address or a name in passing)
+    if ctx.get("body_read") and loc.get("evsent") is False:
+        out.append(("warn", "place is mentioned outside the sentences describing the incident"))
+    # 4c. Small or guessed places with no district anywhere in the story are ambiguous (many villages share a name)
+    if not named and not td and loc.get("level") in ("union", "upazila", "landmark", "area") and loc.get("source_kind") != "curated":
+        out.append(("fail", "small place with no district anywhere in the story (the name may belong to another country or district)"))
+    if len(set(ctx.get("named") or [])) >= 4:
+        out.append(("warn", "article covers many districts (round-up): check each pin"))
+
     # 5. Precision
     lvl = loc.get("level")
     if lvl in ("area", "union", "landmark", "upazila"):

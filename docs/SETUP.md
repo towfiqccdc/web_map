@@ -118,3 +118,10 @@ For every story the job (1) opens the article itself and reads its real publish 
 7. the real publish date was read.
 
 A failed check, or three warnings, sends the story to the **Held** tab: it is not on the map for anyone. Stories about blockades or road closures are never hidden; they are shown as "partly verified" with the ⚠ check spot flag. Each shown item has a **Why this spot** note with the sentence it came from and the result of each check. Held items are re-checked from scratch every hour and deleted after 4 days.
+
+### Reading "what happened, where" (general rules)
+- Places are weighted by the sentence they sit in: a sentence that describes the incident (blocked, torched, clash, killed, collision, explosion ...) counts most; a place that only appears in background ("workers from Dhaka", "police from Dhaka") counts least and cannot create an extra pin.
+- A place must agree with the district written in its own sentence ("Shahjahanpur ... in Dhaka city" can never become a Shahjahanpur in another district).
+- Page footers, addresses and phone numbers are removed from the article text before reading it.
+- Foreign newspapers and well-known foreign places are dropped; a small place with no district anywhere in the story is held back.
+- A highway-only headline never contradicts the article: the article's own place decides.

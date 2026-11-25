@@ -94,7 +94,7 @@ def body_text(page, max_chars=2600):
     paras = []
     for p in re.findall(r"(?is)<p\b[^>]*>(.*?)</p>", scope):
         t = re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", p))).strip()
-        if len(t) >= 60 and not re.search(r"(?i)read more|also read|follow us|subscribe|copyright|advertisement", t):
+        if len(t) >= 60 and not re.search(r"(?i)read more|also read|follow us|subscribe|copyright|advertisement|all rights reserved|\+?880[-\d\s]{6,}|phone\s*:|tel\s*:|e-?mail\s*:|registered|ফোন|নিউজ রুম|ঢাকা-\s?\d{4}|Dhaka-?\s?\d{4}", t):
             paras.append(t)
     return " ".join(paras)[:max_chars]
 

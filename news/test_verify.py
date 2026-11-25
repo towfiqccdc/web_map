@@ -109,6 +109,41 @@ class Pipeline(unittest.TestCase):
         ctx = {"eng": fn.places_mod.engine(), "named": ["Dhaka"], "title_districts": {"Dhaka"}, "body_read": True, "date_ok": True, "critical": False}
         self.assertEqual(verify.grade(verify.run_checks(loc, ctx))[:2], ("high", "show"))
 
+    # ---- general patterns seen in real articles ("what happened, where") -----------------------
+    def _places(self, title, body):
+        rows, st = run(title, body)
+        return [r["place_text"].split(" (")[0] for r in rows], rows, st
+
+    def test_event_sentence_beats_background_mentions(self):     # "blocked the highway in Gazipur", workers/police come from Dhaka
+        places, _, _ = self._places("RMG unrest: Highway blocked, police box torched, 70 factories declare holiday - Prothom Alo English",
+            "Garment workers demanding higher wages staged demonstrations and blocked several sections of the Dhaka-Mymensingh highway in Gazipur on Sunday. "
+            "Workers from Dhaka and Narayanganj also joined the protest, police said. Police from Dhaka were sent to the spot.")
+        self.assertEqual(places, ["Dhaka-Mymensingh highway, Gazipur"])
+
+    def test_place_must_agree_with_district_in_its_own_sentence(self):
+        places, rows, _ = self._places("Bangladesh: A Havoc Of Cocktail Bombings - Analysis",
+            "Multiple cocktail bomb explosions were reported in Shahjahanpur, Shyampur and Sher-e-Bangla Nagar in Dhaka city, in which four people were injured. "
+            "Clashes between two factions occurred in the Bhanga Sub-district of Faridpur District.")
+        self.assertFalse(any("Chapainawabganj" in p for p in places), places)
+
+    def test_foreign_outlets_and_places_are_dropped(self):
+        for t, b in [("Rickshaw Driver Killed in Bus Collision Near Chak 26 Adda - UrduPoint", "A rickshaw driver was killed in a bus collision near Chak 26 Adda."),
+                     ("Kannauj School Bus Accident: 4 Children Killed, 24 Injured - Dainik Jagran", "Four children were killed when a school bus overturned near Rampur.")]:
+            self.assertEqual(run(t, b)[0], [])
+
+    def test_highway_only_headline_does_not_contradict_article(self):
+        places, rows, _ = self._places("6 policemen injured as bus rams into police van on Dhaka-Chattogram Highway",
+            "A bus rammed into a police van in the Chinki Astana area of Jorarganj in Chattogram early today, leaving six policemen injured.")
+        self.assertEqual(places, ["Jorarganj, Chattogram"])
+        self.assertEqual(rows[0]["status"], "pending")
+
+    def test_site_footer_is_not_story_text(self):
+        page = ("<article><p>A cocktail exploded in Khilgaon on Sunday night, police said, and no one was hurt in the blast.</p>"
+                "<p>Media Corporation Limited, 102 Kazi Nazrul Islam Avenue, Karwan Bazar, Dhaka-1215 Phone: +880-2-55013511-15 News Room</p></article>")
+        t = article.body_text(page)
+        self.assertIn("Khilgaon", t)
+        self.assertNotIn("Karwan", t)
+
     def test_held_rows_carry_status_and_reason(self):
         rows, st = run("Bus set on fire", "A bus was torched on Tuesday night. Police are investigating the case in detail.",
                        art_date=NOW - dt.timedelta(days=1))
