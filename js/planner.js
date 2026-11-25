@@ -46,12 +46,13 @@
       var c = SEV_COLOR[r.severity] || SEV_COLOR[2];
       var circle = L.circle([r.lat, r.lng], { radius: r.radius_m || 1000, color: c, weight: 2, fillColor: c, fillOpacity: 0.28 });
       var link = safeUrl(r.source_url);
-      circle.bindPopup(
-        '<b>' + (TYPE_ICON[r.type] || '❗') + ' ' + esc(r.title) + '</b>' +
+      circle.bindPopup(function () {
+        return '<b>' + (TYPE_ICON[r.type] || '❗') + ' ' + esc(r.title) + '</b>' +
         '<div style="font-size:11px;color:#667085">' + esc(r.type) + ' · severity ' + esc(r.severity) +
         (ageText(r) ? ' · ' + esc(ageText(r)) : '') + '</div>' +
-        (link ? '<p style="font-size:12px"><a href="' + esc(link) + '" target="_blank" rel="noopener noreferrer">Read the news report</a></p>' : '')
-      );
+        (link ? '<p style="font-size:12px"><a href="' + esc(link) + '" target="_blank" rel="noopener noreferrer">Read the news report</a></p>' : '') +
+        (window.AdminActive && r.id ? '<p><button type="button" class="pop-del" data-id="' + esc(r.id) + '">🗑 Delete</button></p>' : '');
+      });
       liveLayer.addLayer(circle);
     });
   }
