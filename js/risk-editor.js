@@ -92,6 +92,9 @@
           '<div><label for="fExpires">Stops counting on</label><input id="fExpires" type="date"></div></div>' +
           '<label for="fHappened">Date it happened</label><input id="fHappened" type="date">' +
           '<div class="ap-hint">📍 <span id="fLoc">Tap the map to choose the place (drag the pin to adjust)</span></div>' +
+          '<div class="ap-coord"><label for="fCoord">Or type the coordinates (latitude, longitude)</label>' +
+          '<div class="ap-row2"><input id="fCoord" inputmode="decimal" placeholder="e.g. 23.8583, 90.2667" autocomplete="off"><button id="fCoordGo" class="btn blue" type="button">Move pin</button></div>' +
+          '<small>Tip: in Google Maps, tap and hold a spot, then tap the numbers to copy them and paste here.</small></div>' +
           '<div class="ap-hint" id="fSource"></div>' +
           '<div class="ap-hint ap-orig" id="fOrig"></div>' +
           '<div class="ap-actions" id="apActions"></div>' +
@@ -108,6 +111,8 @@
       '<div id="sideMsg" class="ap-msg"></div>';
     document.body.appendChild(side);
     $('sideClose').onclick = closeSide;
+    $('fCoordGo').onclick = applyCoord;
+    $('fCoord').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); applyCoord(); } };
 
     $('apClose').onclick = close;
     $('apSignIn').onclick = signIn;
@@ -226,6 +231,19 @@
     if (pan) map.setView(p, Math.max(map.getZoom(), 11));
   }
 
+  function parseCoord(t) {
+    var m = String(t || '').replace(/[()@]/g, ' ').match(/(-?\d{1,3}(?:\.\d+)?)\s*[,;\s]\s*(-?\d{1,3}(?:\.\d+)?)/);
+    if (!m) return null;
+    var a = parseFloat(m[1]), b = parseFloat(m[2]);
+    if (a > 80 && b < 40) { var x = a; a = b; b = x; }                       // pasted as lon, lat
+    return (a >= 20.5 && a <= 26.7 && b >= 87.8 && b <= 92.8) ? [a, b] : null;
+  }
+  function applyCoord() {
+    var p = parseCoord($('fCoord').value);
+    if (!p) { say('Coordinates must be inside Bangladesh, like 23.8583, 90.2667', 'err'); return; }
+    say(''); setPoint(p, true);
+  }
+
   function drawCircle() {
     if (circle) { map.removeLayer(circle); circle = null; }
     if (!point || tab === 'svc') return;
@@ -301,7 +319,9 @@
   }
   function catName(k) { for (var i = 0; i < CATS.length; i++) if (CATS[i][0] === k) return CATS[i][1]; return 'Other'; }
   function catOk(r) { return cat === 'all' || catsOf(r).indexOf(cat) > -1; }
-  function itemOk(r) { return cityOk(r) && catOk(r); }
+  function flagged(r) { return (r.confidence && r.confidence !== 'high') || /check/i.test(r.place_text || ''); }
+  var flagOnly = false;
+  function itemOk(r) { return cityOk(r) && catOk(r) && (!flagOnly || flagged(r)); }
   function tabRows() { return rows.filter(function (r) { return tab === 'pending' ? (r.status === 'pending' && isFresh(r)) : tab === 'held' ? (r.status === 'held' && isFresh(r)) : r.status === 'approved'; }); }
   function renderCities() {
     var box = $('apCities');
@@ -412,15 +432,18 @@
       return;
     }
     var items = tabRows().filter(itemOk);
-    if (!items.length) { box.innerHTML = '<div class="ap-empty">' + (tab === 'pending' ? 'Nothing waiting for approval.' : tab === 'held' ? 'Nothing held back.' : 'No active risk areas.') + '</div>'; return; }
-    box.innerHTML = items.map(function (r) {
+    var nFlag = tabRows().filter(flagged).length;
+    var bar = (tab === 'pending' || tab === 'held') && nFlag ? '<button type="button" id="apFlagBtn" class="ap-flagbtn' + (flagOnly ? ' on' : '') + '">⚠ ' + (flagOnly ? 'Showing only items to check — show all' : nFlag + ' item(s) need a manual check — show only these') + '</button>' : '';
+    function bindFlag() { var fb = $('apFlagBtn'); if (fb) fb.onclick = function () { flagOnly = !flagOnly; renderList(); drawPending(); }; }
+    if (!items.length) { box.innerHTML = bar + '<div class="ap-empty">' + (tab === 'pending' ? 'Nothing waiting for approval.' : tab === 'held' ? 'Nothing held back.' : 'No active risk areas.') + '</div>'; bindFlag(); return; }
+    box.innerHTML = bar + items.map(function (r) {
       var src = safeUrl(r.source_url);
       return '<div class="ap-item' + (current && current.id === r.id ? ' sel' : '') + '" data-id="' + esc(r.id) + '">' +
         '<span class="pill ' + esc(r.source) + '">' + esc(r.source) + '</span><span class="pill">' + esc(r.type) + ' · sev ' + esc(r.severity) + '</span>' +
         catsOf(r).slice(0, 3).map(function (k) { return '<span class="pill cat">' + esc(catName(k)) + '</span>'; }).join('') +
         (isEnded(r) ? '<span class="pill ended" title="Past its end date: no longer counted in route checks">ended</span>' : '') +
         (r.confidence ? '<span class="pill conf-' + esc(r.confidence) + '" title="How many independent checks agreed on this place">' + (r.confidence === 'high' ? '✓ verified' : r.confidence === 'medium' ? '◐ partly verified' : '✗ not verified') + '</span>' : '') +
-        (/check/i.test(r.place_text || '') ? '<span class="pill warn" title="The exact spot is not certain. Check it on the map before approving.">⚠ check spot</span>' : '') +
+        (flagged(r) ? '<span class="pill warn" title="The exact spot is not certain. Check it on the map, or type the coordinates, before approving.">⚠ check spot</span>' : '') +
         (tab === 'active' ? '<button type="button" class="ap-del" data-del="' + esc(r.id) + '" title="Delete this approved item">🗑</button>' : '') +
         '<div class="ap-titlerow"><b>' + esc(r.title) + '</b>' +
         (src ? '<a class="ap-link" href="' + esc(src) + '" target="_blank" rel="noopener noreferrer" title="Open the news report">↗ news</a>' : '') + '</div>' +
@@ -429,6 +452,7 @@
         (r.checks ? '<details class="ap-checks"><summary>Why this spot</summary>' + (r.evidence ? '<div class="ap-ev">“…' + esc(r.evidence) + '…”</div>' : '') +
           esc(r.checks).split('; ').map(function (x) { return '<div>' + x + '</div>'; }).join('') + '</details>' : '') + '</div>';
     }).join('');
+    bindFlag();
     box.querySelectorAll('.ap-del').forEach(function (b) {
       b.onclick = function (ev) {
         ev.stopPropagation();
@@ -457,6 +481,7 @@
     $('fSev').value = String(r.severity || 2);
     $('fRadius').value = r.radius_m || 2000;
     $('fHappened').value = r.happened_on || '';
+    $('fCoord').value = '';
     $('fExpires').value = r.expires_at ? r.expires_at.slice(0, 10) : '';
     var src = safeUrl(r.source_url);
     $('fSource').innerHTML = src ? 'Source: <a href="' + esc(src) + '" target="_blank" rel="noopener noreferrer">open the news report</a> — check the place before approving.' : '';
@@ -512,12 +537,14 @@
     if (!point) throw new Error('Please tap the map to choose the place.');
     var radius = parseInt($('fRadius').value, 10);
     if (!(radius >= 200 && radius <= 20000)) throw new Error('Radius must be between 200 and 20000 metres.');
-    return {
+    var moved = current && current.lat != null && (Math.abs(point[0] - current.lat) > 1e-6 || Math.abs(point[1] - current.lng) > 1e-6);
+    var fix = moved ? { place_text: 'Set by admin (coordinates)', confidence: 'high', checks: '✓ position set by the admin', evidence: null } : {};
+    return Object.assign(fix, {
       title: title, type: $('fType').value, severity: parseInt($('fSev').value, 10),
       lat: point[0], lng: point[1], radius_m: radius,
       happened_on: $('fHappened').value || null,
       expires_at: $('fExpires').value ? new Date($('fExpires').value + 'T23:59:59').toISOString() : null
-    };
+    });
   }
 
   function act(name) {
