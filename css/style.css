@@ -237,3 +237,9 @@
 .pill.conf-high{background:#d1fadf;color:#05603a}.pill.conf-medium{background:#fef0c7;color:#93370d}.pill.conf-low{background:#fee4e2;color:#b42318}
 .ap-checks{margin-top:4px;font-size:11px;color:#475467}.ap-checks summary{cursor:pointer;color:#175cd3;font-weight:600}
 .ap-checks div{padding:1px 0}.ap-ev{font-style:italic;color:#344054;background:#f2f4f7;border-radius:6px;padding:3px 6px;margin:3px 0}
+
+.ap-coord{margin:8px 0;padding:8px;border:1px dashed #b2ddff;border-radius:10px;background:#f5faff}
+.ap-coord label{display:block;font-weight:600;font-size:12px;margin-bottom:4px}.ap-coord small{color:#667085;font-size:11px}
+.ap-row2{display:flex;gap:6px}.ap-row2 input{flex:1;min-width:0}.ap-row2 .btn{padding:6px 10px;white-space:nowrap}
+.ap-flagbtn{width:100%;margin:0 0 8px;padding:7px 10px;border:1px solid #fedf89;background:#fffaeb;color:#93370d;border-radius:10px;font-weight:600;font-size:12px;cursor:pointer}
+.ap-flagbtn.on{background:#fef0c7}
