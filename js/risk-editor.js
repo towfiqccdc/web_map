@@ -450,8 +450,9 @@
       return;
     }
     var items = tabRows().filter(itemOk);
-    var nFlag = tabRows().filter(flagged).length;
-    var bar = (tab === 'pending' || tab === 'held') && nFlag ? '<button type="button" id="apFlagBtn" class="ap-flagbtn' + (flagOnly ? ' on' : '') + '">⚠ ' + (flagOnly ? 'Showing only items to check — show all' : nFlag + ' item(s) need a manual check — show only these') + '</button>' : '';
+    var nFlag = tabRows().filter(function (r) { return cityOk(r) && catOk(r) && flagged(r); }).length;      // counts follow the city and type tabs
+    var scope = (city !== 'all' ? ' in ' + city : '') + (cat !== 'all' ? ' (' + catName(cat) + ')' : '');
+    var bar = (tab === 'pending' || tab === 'held') && (nFlag || flagOnly) ? '<button type="button" id="apFlagBtn" class="ap-flagbtn' + (flagOnly ? ' on' : '') + '">⚠ ' + (flagOnly ? 'Showing only items to check' + scope + ' — show all' : nFlag + ' item(s)' + scope + ' need a manual check — show only these') + '</button>' : '';
     function bindFlag() { var fb = $('apFlagBtn'); if (fb) fb.onclick = function () { flagOnly = !flagOnly; renderList(); drawPending(); }; }
     if (!items.length) { box.innerHTML = bar + '<div class="ap-empty">' + (tab === 'pending' ? 'Nothing waiting for approval.' : tab === 'held' ? 'Nothing held back.' : 'No active risk areas.') + '</div>'; bindFlag(); return; }
     box.innerHTML = bar + items.map(function (r) {
