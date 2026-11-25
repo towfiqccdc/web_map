@@ -117,7 +117,7 @@
     $('apClose').onclick = close;
     $('apSignIn').onclick = signIn;
     $('apPass').addEventListener('keydown', function (e) { if (e.key === 'Enter') signIn(); });
-    $('apOut').onclick = function () { sb.auth.signOut().then(function () { resetEditor(); $('adminBtn').textContent = '🔒 Admin'; showLogin(); }); };
+    $('apOut').onclick = function () { sb.auth.signOut().then(function () { window.AdminActive = false; resetEditor(); $('adminBtn').textContent = '🔒 Admin'; showLogin(); }); };
     $('apTabs').querySelectorAll('button').forEach(function (b) { b.onclick = function () { setTab(b.dataset.t); }; });
     ['fSev', 'fRadius'].forEach(function (id) { $(id).addEventListener('input', drawCircle); });
     $('sIcon').innerHTML = '<option value="">Default for the type</option>' + ICONS.map(function (i) { return '<option value="' + i + '">' + i + '</option>'; }).join('');
@@ -174,6 +174,22 @@
     }).catch(function (e) { say(e.message, 'err'); });
   }
 
+  // Delete button inside an approved news popup on the map (admin only)
+  document.addEventListener('click', function (ev) {
+    var b = ev.target.closest && ev.target.closest('.pop-del');
+    if (!b) return;
+    ev.preventDefault();
+    if (!window.AdminActive || !sb) return;
+    if (!confirm('Delete this approved item permanently?')) return;
+    b.disabled = true; b.textContent = 'Deleting…';
+    sb.from('risk_areas').delete().eq('id', b.dataset.id).then(function (res) {
+      if (res.error) { b.disabled = false; b.textContent = '🗑 Delete'; alert(res.error.message); return; }
+      map.closePopup();
+      if (window.PlannerAPI) window.PlannerAPI.reloadRisks();
+      if (typeof loadRows === 'function' && $('apMain') && !$('apMain').classList.contains('hidden')) loadRows();
+    });
+  });
+
   function close() {
     show('adminPanel', false);
     document.body.classList.remove('admin-open');
@@ -198,6 +214,7 @@
     $('apWho').textContent = '⚠️ Open test mode — no sign-in. Anyone with this link can change data.';
     $('apOut').classList.add('hidden');
     show('apLogin', false); show('apMain', true);
+    window.AdminActive = true;
     setTab(tab);
     return loadRows();
   }
@@ -214,6 +231,7 @@
       $('apWho').textContent = session.user.email;
       $('adminBtn').textContent = '🔓 Admin';
       show('apLogin', false); show('apMain', true);
+      window.AdminActive = true;
       setTab(tab);
       loadRows();
     });

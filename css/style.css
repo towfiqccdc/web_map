@@ -243,3 +243,6 @@
 .ap-row2{display:flex;gap:6px}.ap-row2 input{flex:1;min-width:0}.ap-row2 .btn{padding:6px 10px;white-space:nowrap}
 .ap-flagbtn{width:100%;margin:0 0 8px;padding:7px 10px;border:1px solid #fedf89;background:#fffaeb;color:#93370d;border-radius:10px;font-weight:600;font-size:12px;cursor:pointer}
 .ap-flagbtn.on{background:#fef0c7}
+
+.pop-del{border:1px solid #fda29b;background:#fef3f2;color:#b42318;border-radius:8px;padding:5px 10px;font-weight:700;font-size:12px;cursor:pointer}
+.pop-del:hover{background:#fee4e2}
