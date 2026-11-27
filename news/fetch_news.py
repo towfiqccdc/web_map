@@ -1125,7 +1125,8 @@ def build_rows(items, geocoder, max_age_days, expiry_days, now=None, translator=
                 stats["ai_rescued"] += 1
             elif ai:
                 near = any(l.get("district") == ai.get("district") and _km(l["lat"], l["lng"], ai["lat"], ai["lng"]) <= 12 for l in locs)
-                ctx["llm"] = {"agree": near, "where": ai["place_text"].split(" (")[0]}
+                gap = [_km(l["lat"], l["lng"], ans["lat"], ans["lng"]) for l in locs] if ans.get("lat") is not None else []
+                ctx["llm"] = {"agree": near, "where": ai["place_text"].split(" (")[0], "coord_km": min(gap) if gap else None}
                 stats["ai_disagree"] += 0 if near else 1
         if not locs:
             stats["no_place"] += 1
@@ -1312,6 +1313,10 @@ def main(argv=None):
     rows, stats = build_rows(items, Geocoder(), max_age, expiry, reader=reader, known_urls=known, llm=llm,
                              translator=Translator(email=os.environ.get("MYMEMORY_EMAIL")))
     log(f"\nFeeds ok: {ok}, failed: {len(failed)}   |   {stats}")
+    if llm:
+        log(f"AI reader (Gemini) answers: {llm_mod.STATS or 'none asked'}")
+        for smp in llm_mod.SAMPLES:
+            log(f"   AI reader problem -> {smp}")
 
     if args.dry_run:
         for r in rows:

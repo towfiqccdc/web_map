@@ -249,6 +249,24 @@ class Pipeline(unittest.TestCase):
         with self.assertRaises(llm_mod.RateLimited):
             llm_mod.ask("t", "x", "k", post=limited)
 
+    def test_police_station_that_handles_the_case_is_not_the_incident_place(self):
+        from news import story
+        for t, name in [("Khilgaon Police Station seeks assistance in identifying a woman who died at Kuril.", "Khilgaon"),
+                        ("Police at Sutrapur Police Station filed a case in connection with the incident.", "Sutrapur"),
+                        ("Matiur Rahman, officer-in-charge of Shibganj Police Station, said a case would be filed.", "Shibganj")]:
+            i = t.find(name)
+            self.assertEqual(story.role_of(t, i, i + len(name)), "neutral", t)
+        t = "A bus was set on fire near Sarail police station on Tuesday."
+        self.assertEqual(story.role_of(t, t.find("Sarail"), t.find("Sarail") + 6), "locative")
+
+    def test_ai_coordinates_are_only_a_cross_check(self):
+        body = "Workers blocked the highway in Gazipur on Sunday and clashed with police, who fired tear gas near the factory gate."
+        ans = {"abroad": False, "district": "Gazipur", "upazila_or_thana": None, "union_or_area": None, "road_or_landmark": None,
+               "evidence": "in Gazipur on Sunday", "confidence": "medium", "latitude": 22.0, "longitude": 91.8}
+        rows, st, calls = self._run_ai("Workers block highway, clash with police", body, ans)
+        if calls:
+            self.assertTrue(all("coordinate estimate" in r["checks"] for r in rows), rows)
+
     def test_held_rows_carry_status_and_reason(self):
         rows, st = run("Bus set on fire", "A bus was torched on Tuesday night. Police are investigating the case in detail.",
                        art_date=NOW - dt.timedelta(days=1))

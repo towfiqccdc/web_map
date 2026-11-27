@@ -91,6 +91,9 @@ def run_checks(loc, ctx):
         out.append(("warn", "place found by the AI reader only (the rules found none): check it"))
     elif ai is not None:
         out.append(("pass", "AI second reading agrees on the place") if ai["agree"] else ("warn", f"AI second reading says {ai['where']}: check it"))
+        km = ai.get("coord_km")                                             # the AI's own coordinates are only a cross-check, never the pin
+        if km is not None:
+            out.append(("pass", f"AI's coordinate estimate is {km:.0f} km from the pin") if km <= 15 else ("warn", f"AI's coordinate estimate is {km:.0f} km away from the pin"))
 
     # 7. Date
     dok = ctx.get("date_ok")
