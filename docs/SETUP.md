@@ -5,7 +5,7 @@ database (Supabase). The public map reads the **approved** ones and, when someon
 *From → To*, picks the route with the fewest reported risks.
 
 ```
-news (hourly)  ──▶ [pending] ──you approve──▶ [approved] ──▶ map: From → To  ──▶ safest route
+news (every 3 h) ──▶ [pending] ──you approve──▶ [approved] ──▶ map: From → To  ──▶ safest route
 map page → 🔒 Admin (manual, instantly approved) ──────────┘
 ```
 
@@ -29,7 +29,7 @@ map page → 🔒 Admin (manual, instantly approved) ─────────
    - `SUPABASE_SERVICE_KEY` = the service_role key
 3. Open the **Actions** tab → **Daily news check** → **Run workflow**. After a minute open the run: it lists which news feeds worked and how many pending items were added. Feeds that fail are just reported; edit `news/feeds.txt` to remove or replace them.
 
-It then runs by itself every hour. Items already seen are skipped, so you only see new ones.
+It then runs by itself every 3 hours. Items already seen are skipped, so you only see new ones.
 
 ## 4. Every day
 1. Open the map and tap **🔒 Admin** (top right). Sign in with your admin email and password. There is no separate admin page.
@@ -117,7 +117,7 @@ For every story the job (1) opens the article itself and reads its real publish 
 6. if a highway is named, the pin is on or near it;
 7. the real publish date was read.
 
-A failed check, or three warnings, sends the story to the **Held** tab: it is not on the map for anyone. Stories about blockades or road closures are never hidden; they are shown as "partly verified" with the ⚠ check spot flag. Each shown item has a **Why this spot** note with the sentence it came from and the result of each check. Held items are re-checked from scratch every hour and deleted after 4 days.
+A failed check, or three warnings, sends the story to the **Held** tab: it is not on the map for anyone. Stories about blockades or road closures are never hidden; they are shown as "partly verified" with the ⚠ check spot flag. Each shown item has a **Why this spot** note with the sentence it came from and the result of each check. Held items are re-checked from scratch every run and deleted after 4 days.
 
 ### Reading "what happened, where" (general rules)
 - Places are weighted by the sentence they sit in: a sentence that describes the incident (blocked, torched, clash, killed, collision, explosion ...) counts most; a place that only appears in background ("workers from Dhaka", "police from Dhaka") counts least and cannot create an extra pin.

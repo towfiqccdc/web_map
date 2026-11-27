@@ -1151,7 +1151,7 @@ def build_rows(items, geocoder, max_age_days, expiry_days, now=None, translator=
                "named": named_districts(full_text, tl), "body_read": bool(body), "date_ok": bool(art.get("published")),
                "critical": bool(c.get("planned") or BLOCKAGE.search(full_text))}
         bld_hint = bool(BUILDING_RE.search(full_text)) and not any(l.get("level") == "landmark" and l.get("source_kind") != "curated" for l in locs)
-        if llm and ai_budget > 0 and (not locs or bld_hint or any(verify.grade(verify.run_checks(l, ctx), ctx["critical"])[0] != "high" for l in locs)):
+        if llm and ai_budget > 0 and it["link"] not in known_urls and (not locs or bld_hint or any(verify.grade(verify.run_checks(l, ctx), ctx["critical"])[0] != "high" for l in locs)):
             ai_budget -= 1                                                    # step 3: AI second reader, only for stories the rules are unsure about
             stats["ai_asked"] += 1
             ans = llm(it["title"], (it["summary"] + " " + body).strip())
@@ -1371,7 +1371,7 @@ def main(argv=None):
                              translator=Translator(email=os.environ.get("MYMEMORY_EMAIL")))
     log(f"\nFeeds ok: {ok}, failed: {len(failed)}   |   {stats}")
     if llm:
-        log(f"AI reader (Gemini) answers: {llm_mod.STATS or 'none asked'}")
+        log(f"AI reader (Gemini) answers: {llm_mod.STATS or 'none asked'}  (questions this run: {stats.get('ai_asked', 0)} of at most {os.environ.get('LLM_MAX_PER_RUN', '40')})")
         for smp in llm_mod.SAMPLES:
             log(f"   AI reader problem -> {smp}")
 
