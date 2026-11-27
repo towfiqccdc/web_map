@@ -139,3 +139,7 @@ Add a repository secret `GEMINI_API_KEY` (free key from aistudio.google.com). Th
 - Gemini never gives coordinates. It names the district / upazila / area and quotes the words of the story that say so. The answer is ignored unless the quoted words really are in the story.
 - The answer goes through the same official place list as the rules. If both agree the pin keeps its checks; if they disagree the pin is flagged ⚠ with "AI second reading says …"; if the rules found nothing but the AI did, the pin is shown flagged ("found by the AI reader only").
 - No key, a network error or the free limit being reached simply means the rules are used alone. On the free plan Google may use the text sent (public news only) to improve its products.
+
+- The run log now ends with `AI reader (Gemini) answers: {...}` and up to 3 error messages (bad key, wrong model name, free limit, unreadable answer, quote not in story), so you can see whether Gemini responded.
+- Gemini is also asked for approximate coordinates. They are never used for the pin; they are only compared with the pin (more than 15 km apart -> flagged).
+- A police station named only as the agency handling the case ("Khilgaon Police Station seeks assistance…", "OC of Shibganj Police Station said") is not the incident place.
