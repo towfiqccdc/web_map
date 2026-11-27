@@ -5,7 +5,7 @@ name: Daily news check
 # until you approve it on the map (Admin button).
 on:
   schedule:
-    - cron: "10 * * * *"
+    - cron: "10 */3 * * *"
   workflow_dispatch:
 
 permissions:

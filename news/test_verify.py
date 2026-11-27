@@ -272,6 +272,13 @@ class Pipeline(unittest.TestCase):
         self.assertIsNone(routes.match(24.37, 88.60)["route"])
         self.assertGreater(routes.priority("Highway blocked in Bhairab, Brahmanbaria"), routes.priority("Rajshahi shop robbed"))
 
+    def test_ai_not_asked_again_for_stories_already_stored(self):
+        calls = []
+        llm = lambda t, x: calls.append(1)
+        items = [{"title": "Bus torched in Dhaka", "link": "https://news.google.com/rss/articles/old1", "summary": "", "published": NOW}]
+        fn.build_rows(items, geo(), 4, 30, now=NOW, reader=lambda l: {"text": "", "published": NOW}, known_urls={"https://news.google.com/rss/articles/old1"}, llm=llm)
+        self.assertEqual(calls, [])
+
     def test_ai_failure_or_no_key_changes_nothing(self):
         self.assertIsNone(llm_mod.ask("t", "x", None))
         def boom(*a):
