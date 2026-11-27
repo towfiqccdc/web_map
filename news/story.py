@@ -34,6 +34,7 @@ LIST_LOC = re.compile(r"\b(?:in|at|near|across|around)\s+(?:the\s+)?[\w'’ ,-]{
 ORIGIN_BEFORE = re.compile(r"(?:(?-i:\b(?!(?:Area|Areas|Outskirts|Vicinity|Premises|Centre|Center|Heart|Parts?|City|District|Residents?|Natives?|Part)\s)[A-Z][a-z]{2,}\s+of)|\b(?:residents? of|natives? of|hail(?:s|ing)? from|hometown(?: in| of)?|home district(?: of)?|belonging to|originally from|son of|daughter of|from)"
                            r"|\b(?:man|woman|youth|worker|workers|student|expatriate|migrant|labourer|laborer|driver|businessman|teenager|boy|girl|passenger|farmer|trader|couple|family|person|people)"
                            r"(?:,)?\s+(?:aged\s+\d+\s+)?(?:of|from))\s+(?:the\s+)?(?:[\w'’-]+\s+){0,2}$", re.I)
+KIN_CLAUSE = re.compile(r"\b(?:son|daughter|wife|husband|father|mother|brother|sister|relative|neighbou?r)s?\s+of\b|\bvillage\s+(?:under|in|of)\s+(?:the\s+)?(?:[\w'’-]+\s+){0,2}$", re.I)
 AFTER_LOC = re.compile(r"^\s*(?:area|police station|thana|upazila|union|bazar|bazaar|mor\b|more\b|intersection|crossing|bridge|flyover|bus stand|market|hospital|mill|factory|road|highway)", re.I)
 BN_AFTER_LOC = re.compile(r"^(?:ে|তে|য়|য়ে|-এ|-তে|\sএ\b|র?\s*এলাকায়|র?\s*কাছে|র?\s*নিকটে|\sথানা|\sইউনিয়নে|\sউপজেলায়)")
 AFTER_ORIGIN = re.compile(r"^[-\s]*(?:based|born|origin|native|resident|national)\b", re.I)               # "Dhaka-based", "Natore-born"
@@ -49,7 +50,7 @@ def role_of(text, start, end, title_len=0):
     after = text[end:end + 40]
     if start < title_len and start < 30 and re.match(r"^\s*[:,]", after):
         return "dateline"
-    if ORIGIN_BEFORE.search(before) or BN_AFTER_ORIGIN.match(after) or AFTER_ORIGIN.match(after):
+    if ORIGIN_BEFORE.search(before) or KIN_CLAUSE.search(before) or BN_AFTER_ORIGIN.match(after) or AFTER_ORIGIN.match(after):
         return "origin"
     if LOC_BEFORE.search(before) or LIST_LOC.search(before) or AFTER_LOC.match(after) or BN_AFTER_LOC.match(after):
         return "locative"

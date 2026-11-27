@@ -99,13 +99,38 @@ def body_text(page, max_chars=2600):
     return " ".join(paras)[:max_chars]
 
 
+BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+
+
+def variants(url):
+    """Other addresses of the same article: some sites block bots on the normal page but serve the AMP page."""
+    u = urllib.parse.urlparse(url)
+    out = [url]
+    if "/amp/" not in u.path and u.netloc.endswith("dhakatribune.com"):
+        out.append(urllib.parse.urlunparse(u._replace(path="/amp" + u.path)))
+    elif not u.path.rstrip("/").endswith("/amp") and "dhakatribune" not in u.netloc:
+        out.append(urllib.parse.urlunparse(u._replace(path=u.path.rstrip("/") + "/amp")))
+    return out
+
+
 def read(link, fetch=_get):
-    """{"url", "published", "text"} for a feed link; any failure returns {}."""
+    """{"url", "published", "text"} for a feed link; {} on failure (the caller then works from the headline)."""
     try:
         url = resolve(link, fetch)
         if not url:
             return {}
-        page = fetch(url).decode("utf-8", "ignore")
-        return {"url": url, "published": parse_date(page), "text": body_text(page)}
+        best = {}
+        for u in variants(url):
+            for headers in (None, {"User-Agent": BROWSER_UA, "Accept-Language": "en,bn;q=0.8"}):
+                try:
+                    page = (fetch(u) if headers is None else fetch(u, headers=headers)).decode("utf-8", "ignore")
+                except Exception:
+                    continue
+                got = {"url": u, "published": parse_date(page), "text": body_text(page)}
+                if len(got["text"]) > len(best.get("text", "")) or (not best):
+                    best = {**got, "published": got["published"] or best.get("published")}
+                if len(best["text"]) >= 200:
+                    return best
+        return best if best.get("text") or best.get("published") else {}
     except Exception:
         return {}

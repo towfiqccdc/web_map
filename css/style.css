@@ -251,3 +251,7 @@
 .pin-mark.warn{border-color:#fff;outline:2px solid #b54708;color:#fff;font-size:12px}
 
 .ap-row2 .btn.ok{background:#12b76a;color:#fff;border-color:#12b76a}
+
+.pin-dot{width:18px;height:18px;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.5)}
+.pin-stack{width:30px;height:30px;border-radius:50%;background:#7a2e0e;color:#fff;border:3px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px}
+.ap-also,.pop-also{font-size:11px;color:#475467;margin:3px 0}.ap-also a,.pop-also a{color:#175cd3;font-weight:600}

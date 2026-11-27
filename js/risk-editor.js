@@ -293,11 +293,14 @@
   }
 
   function drawPending() {
-    if (!pendingLayer) pendingLayer = L.layerGroup().addTo(map);
+    if (!pendingLayer) pendingLayer = (L.markerClusterGroup ? L.markerClusterGroup({ maxClusterRadius: 28, spiderfyOnMaxZoom: true, showCoverageOnHover: false,
+      zoomToBoundsOnClick: true, spiderfyDistanceMultiplier: 1.6, iconCreateFunction: function (c) {
+        return L.divIcon({ className: '', iconSize: [30, 30], html: '<div class="pin-stack" title="Several reports at this spot: tap to spread them out">' + c.getChildCount() + '</div>' });
+      } }) : L.layerGroup()).addTo(map);
     pendingLayer.clearLayers();
     if (tab === 'svc') {                                   // show every service so you can see what is missing
       svcRows.forEach(function (r) {
-        L.circleMarker([r.lat, r.lng], { radius: 7, color: '#fff', weight: 2, fillColor: '#1769aa', fillOpacity: 1 })
+        L.marker([r.lat, r.lng], { icon: L.divIcon({ className: '', iconSize: [14, 14], iconAnchor: [7, 7], html: '<div class="pin-dot" style="background:#1769aa;width:14px;height:14px"></div>' }) })
           .on('click', function () { editService(r); }).bindTooltip(r.name).addTo(pendingLayer);
       });
       return;
@@ -313,7 +316,7 @@
           .on('click', function () { edit(r); }).bindTooltip(tip).addTo(pendingLayer);
         return;
       }
-      L.circleMarker([r.lat, r.lng], { radius: 9, color: '#fff', weight: 2, fillColor: fill, fillOpacity: 1 })
+      L.marker([r.lat, r.lng], { icon: L.divIcon({ className: '', iconSize: [18, 18], iconAnchor: [9, 9], html: '<div class="pin-dot" style="background:' + fill + '"></div>' }) })
         .on('click', function () { edit(r); }).bindTooltip(tip).addTo(pendingLayer);
     });
   }
@@ -493,6 +496,7 @@
         (src ? '<a class="ap-link" href="' + esc(src) + '" target="_blank" rel="noopener noreferrer" title="Open the news report">↗ news</a>' : '') + '</div>' +
         '<small>' + (r.place_text ? 'Matched place: ' + esc(r.place_text) + ' · ' : '') + esc((r.happened_on || r.created_at || '').slice(0, 10)) + '</small>' +
         (r.title_original ? '<small class="ap-orig">Original: ' + esc(r.title_original) + '</small>' : '') +
+        (r.also_in && window.alsoHtml ? '<div class="ap-also">' + window.alsoHtml(r.also_in).replace(/<\/?p[^>]*>/g, '') + '</div>' : '') +
         (r.checks ? '<details class="ap-checks"><summary>Why this spot</summary>' + (r.evidence ? '<div class="ap-ev">“…' + esc(r.evidence) + '…”</div>' : '') +
           esc(r.checks).split('; ').map(function (x) { return '<div>' + x + '</div>'; }).join('') + '</details>' : '') + '</div>';
     }).join('');

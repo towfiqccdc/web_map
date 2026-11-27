@@ -26,6 +26,15 @@
   function $(id) { return document.getElementById(id); }
   function safeUrl(u) { return /^https?:\/\//i.test(u || '') ? u : ''; }
 
+  function alsoHtml(t) {                                  // "Also reported by" lines: "Outlet|url" per line
+    var list = String(t || '').split('\n').filter(Boolean).map(function (x) {
+      var i = x.indexOf('|'), u = safeUrl(x.slice(i + 1));
+      return u ? '<a href="' + esc(u) + '" target="_blank" rel="noopener">' + esc(x.slice(0, i)) + '</a>' : '';
+    }).filter(Boolean);
+    return list.length ? '<p class="pop-also">Also reported by: ' + list.join(', ') + '</p>' : '';
+  }
+  window.alsoHtml = alsoHtml;
+
   function ageText(r) {
     var when = r.happened_on || r.created_at;
     var t = Date.parse(when || '');
@@ -51,6 +60,7 @@
         '<div style="font-size:11px;color:#667085">' + esc(r.type) + ' · severity ' + esc(r.severity) +
         (ageText(r) ? ' · ' + esc(ageText(r)) : '') + '</div>' +
         (link ? '<p style="font-size:12px"><a href="' + esc(link) + '" target="_blank" rel="noopener noreferrer">Read the news report</a></p>' : '') +
+        alsoHtml(r.also_in) +
         (window.AdminActive && r.id ? '<p><button type="button" class="pop-del" data-id="' + esc(r.id) + '">🗑 Delete</button></p>' : '');
       });
       liveLayer.addLayer(circle);

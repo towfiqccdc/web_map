@@ -32,8 +32,9 @@ import xml.etree.ElementTree as ET
 from email.utils import parsedate_to_datetime
 
 try:                                    # run as `python news/fetch_news.py` or imported as news.fetch_news
-    from . import places as places_mod, story, verify, article
+    from . import places as places_mod, story, verify, article, dedupe
 except ImportError:
+    import dedupe
     import places as places_mod
     import story
     import verify
@@ -421,10 +422,19 @@ def parse_feed(xml_bytes):
                     when = None
         if when is not None and when.tzinfo is None:
             when = when.replace(tzinfo=dt.timezone.utc)
-        items.append({"title": strip_html(title.text if title is not None else ""),
-                      "link": url,
-                      "summary": strip_html(summ.text if summ is not None else ""),
-                      "published": when})
+        src = get("source")
+        outlet = strip_html(src.text or "") if src is not None else ""
+        t_txt = strip_html(title.text if title is not None else "")
+        s_txt = strip_html(summ.text if summ is not None else "")
+        if outlet and s_txt.endswith(outlet):                   # Google's summary is "Title  Outlet": the outlet name is not a place ("Dhaka Tribune")
+            s_txt = s_txt[:-len(outlet)].strip()
+        core = re.sub(r"\s+[-–|]\s+[^-–|]{2,40}$", "", t_txt)
+        if core and s_txt.startswith(core):
+            s_txt = s_txt[len(core):].strip()
+        if not outlet:
+            m_ = re.search(r"\s+[-–|]\s+([^-–|]{2,40})$", t_txt)
+            outlet = m_.group(1).strip() if m_ else ""
+        items.append({"title": t_txt, "link": url, "summary": s_txt, "published": when, "outlet": outlet})
     return items
 
 
@@ -1098,9 +1108,7 @@ def build_rows(items, geocoder, max_age_days, expiry_days, now=None, translator=
                "critical": bool(c.get("planned") or BLOCKAGE.search(full_text))}
         for loc in locs:
             key = (loc["place_text"].lower(), happened, c["type"])      # same story from several outlets
-            if key in seen_keys or (not loc.get("known") and any(
-                    r["type"] == c["type"] and r["happened_on"] == happened and
-                    _km(r["lat"], r["lng"], loc["lat"], loc["lng"]) < 4 for r in rows)):
+            if key in seen_keys:
                 continue
             seen_keys.add(key)
             checks = verify.run_checks(loc, ctx)                              # steps 3-8: independent checks on the pin
@@ -1121,6 +1129,7 @@ def build_rows(items, geocoder, max_age_days, expiry_days, now=None, translator=
                 "source": "news", "source_url": it["link"] + ("#" + slug if many else ""),
                 "place_text": loc["place_text"][:120],
                 "status": "pending" if verdict == "show" else "held", "happened_on": happened,
+                "_outlet": it.get("outlet"), "also_in": None,
                 "confidence": conf, "evidence": (loc.get("ev") or "")[:300], "checks": verify.summary(checks)[:900], "body_read": bool(body),
                 "expires_at": (now + dt.timedelta(days=expiry_days)).isoformat(),
             })
@@ -1132,6 +1141,9 @@ def build_rows(items, geocoder, max_age_days, expiry_days, now=None, translator=
             stats["kept"] += added
         else:
             stats["duplicate"] += 1
+    before = len(rows)
+    rows, _ = dedupe.merge(rows)                                          # the same event from several outlets -> one pin
+    stats["duplicate"] += before - len(rows)
     return rows, stats
 
 
@@ -1266,6 +1278,19 @@ def main(argv=None):
 
     if rows:
         rows = drop_already_stored(rows)
+        try:                                                              # one incident, one pin (also across earlier runs)
+            since = (dt.date.today() - dt.timedelta(days=max_age + 2)).isoformat()
+            old = supabase_request("GET", f"/rest/v1/risk_areas?source=eq.news&status=in.(pending,approved)&happened_on=gte.{since}"
+                                          "&select=id,type,lat,lng,happened_on,title,also_in,source_url&limit=2000") or []
+            before = len(rows)
+            rows, patches = dedupe.merge(rows, old)
+            for pid, txt in patches:
+                supabase_request("PATCH", f"/rest/v1/risk_areas?id=eq.{pid}", {"also_in": txt}, {"Prefer": "return=minimal"})
+            if before != len(rows):
+                log(f"Merged {before - len(rows)} repeat report(s) of events already on the map.")
+        except Exception as e:
+            log(f"Duplicate merge skipped ({e}).")
+        rows = [{k: v for k, v in r.items() if not k.startswith("_")} for r in rows]
         if rows:
             supabase_request("POST", "/rest/v1/risk_areas?on_conflict=source_url", rows,
                              {"Prefer": "resolution=ignore-duplicates,return=minimal"})
