@@ -19,9 +19,12 @@ Ignore: where victims or suspects live or come from ("son of", "resident of", "v
 places that are only background or are where people travelled from. If the incident happened outside Bangladesh, set abroad to true.
 Answer with JSON only:
 {"abroad": true|false, "district": string|null, "upazila_or_thana": string|null, "union_or_area": string|null, "road_or_landmark": string|null,
+ "building": {"name": string, "kind": string, "latitude": number|null, "longitude": number|null}|null,
  "evidence": "the exact words copied from the text that state the place", "confidence": "high"|"medium"|"low",
  "latitude": number|null, "longitude": number|null}
-latitude and longitude are your best estimate of the place named, or null if you are not sure. Never guess them.
+"building" is the named building or institution where the incident happened (a court, stadium, hospital, school, bank branch, market,
+mall, police station, factory, bridge, railway/bus station...) with its kind and its own coordinates if you know them. null if the incident was on a road or in an open area.
+latitude and longitude (top level) are your best estimate of the place named, or null if you are not sure. Never guess them.
 Use English spellings of official place names. Use null when the text does not say. Never guess."""
 
 
@@ -120,10 +123,18 @@ def _ask_one(title, text, key, model, post, timeout):
             return float(v)
         except (TypeError, ValueError):
             return None
+    def inbd(a, o):
+        return a is not None and o is not None and 20.5 <= a <= 26.7 and 87.8 <= o <= 92.8
     la, lo = num(ans.get("latitude")), num(ans.get("longitude"))
-    if la is not None and lo is not None and not (20.5 <= la <= 26.7 and 87.8 <= lo <= 92.8):
+    if not inbd(la, lo):
         la = lo = None
-    return {"abroad": False, **keep, "evidence": str(ans["evidence"])[:300], "confidence": ans.get("confidence"), "lat": la, "lng": lo}
+    b = ans.get("building") if isinstance(ans.get("building"), dict) else None
+    building = None
+    if b and b.get("name") and _norm(b["name"]) in _norm(f"{title}. {text}"):      # the building must be named in the story
+        bl, bo = num(b.get("latitude")), num(b.get("longitude"))
+        building = {"name": str(b["name"]).strip()[:100], "kind": str(b.get("kind") or "")[:40],
+                    "lat": bl if inbd(bl, bo) else None, "lng": bo if inbd(bl, bo) else None}
+    return {"abroad": False, **keep, "evidence": str(ans["evidence"])[:300], "confidence": ans.get("confidence"), "lat": la, "lng": lo, "building": building}
 
 
 def as_sentence(ans):

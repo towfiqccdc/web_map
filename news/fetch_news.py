@@ -32,9 +32,10 @@ import xml.etree.ElementTree as ET
 from email.utils import parsedate_to_datetime
 
 try:                                    # run as `python news/fetch_news.py` or imported as news.fetch_news
-    from . import places as places_mod, story, verify, article, dedupe, llm as llm_mod
+    from . import places as places_mod, story, verify, article, dedupe, routes, llm as llm_mod
 except ImportError:
     import dedupe
+    import routes
     import llm as llm_mod
     import places as places_mod
     import story
@@ -1059,6 +1060,45 @@ def named_districts(text, title_len):
             if m["entries"][0]["level"] == "district" and story.role_of(t, m["pos"], m["end"], title_len) != "origin"]
 
 
+BUILDING_RE = re.compile(r"\b(court|stadium|hospital|medical college|university|college|school|madrasa|mosque|market|mall|bank|factory|terminal|station|bridge|flyover|"
+                         r"tower|building|hotel|cinema|park|jail|prison|airport|port|depot|bhaban|complex)\b|আদালত|স্টেডিয়াম|হাসপাতাল|কলেজ|বিশ্ববিদ্যালয়|মার্কেট|ব্যাংক|কারখানা|"
+                         r"টার্মিনাল|স্টেশন|সেতু|ফ্লাইওভার|মার্কেট|ভবন|কারাগার|বিমানবন্দর", re.I)
+COARSE_LEVELS = ("district", "city", "area", "union", "upazila", "highway")
+
+
+def _ai_building(ans, base_district, geocoder, eng):
+    """A building or institution the AI found in the story (court, stadium, hospital...), pinned on the building itself.
+    Position = OpenStreetMap search for "<building>, <area>, <district>", checked against the district and against the AI's own estimate."""
+    b = ans.get("building") if ans else None
+    if not b:
+        return None
+    district = ans.get("district") or base_district
+    area = ans.get("upazila_or_thana") or ans.get("union_or_area")
+    pt = None
+    for q in ([f"{b['name']}, {area}, {district}"] if area and district else []) + ([f"{b['name']}, {district}"] if district else [b["name"]]):
+        pt = geocoder.lookup(q)
+        if pt and (not district or not eng or eng.fits(pt[0], pt[1], [district])):
+            break
+        pt = None
+    est = (b["lat"], b["lng"]) if b.get("lat") is not None else None
+    if est and district and eng and not eng.fits(est[0], est[1], [district]):
+        est = None                                                        # the AI's estimate is outside the district it named: ignore it
+    if pt and est:
+        gap = _km(pt[0], pt[1], est[0], est[1])
+        how, spot = ("agree", pt) if gap <= 5 else ("apart", pt)
+        note = f"building position from map search; the AI's estimate is {gap:.1f} km from it"
+    elif pt:
+        how, spot, note = "map", pt, "building position from map search only"
+    elif est:
+        how, spot, note = "ai", est, "building position is the AI's estimate only (map search found nothing)"
+    else:
+        return None
+    label = f"{b['name']}" + (f" ({b['kind']})" if b.get("kind") else "")
+    return {"lat": spot[0], "lng": spot[1], "radius_m": 300, "known": False, "district": district, "name": b["name"], "level": "landmark",
+            "place_text": f"{label}, {area + ', ' if area else ''}{district or 'Bangladesh'}", "role": "locative", "ev": ans["evidence"], "evsent": True,
+            "bld": how, "bld_note": note, "source_kind": "building"}
+
+
 def _ai_loc(ans, geocoder):
     """The AI reader's answer as a place, resolved through the same official place list as the rules."""
     locs, _ = analyse_story(llm_mod.as_sentence(ans), "", geocoder)
@@ -1070,7 +1110,8 @@ def build_rows(items, geocoder, max_age_days, expiry_days, now=None, translator=
     now = now or dt.datetime.now(dt.timezone.utc)
     stats = {"seen": 0, "too_old": 0, "not_incident": 0, "no_place": 0, "duplicate": 0, "kept": 0, "held": 0, "articles_read": 0, "ai_asked": 0, "ai_rescued": 0, "ai_disagree": 0}
     eng, read_budget = places_mod.engine(), MAX_ARTICLES_PER_RUN
-    ai_budget = int(os.environ.get("LLM_MAX_PER_RUN", "20"))
+    ai_budget = int(os.environ.get("LLM_MAX_PER_RUN", "40"))
+    items = sorted(items, key=lambda i: -routes.priority(f"{i['title']} {i['summary']}"))      # stories about our routes get the reading / AI budget first
     rows, seen_urls, seen_keys = [], set(), set()
     for it in items:
         stats["seen"] += 1
@@ -1109,7 +1150,8 @@ def build_rows(items, geocoder, max_age_days, expiry_days, now=None, translator=
         ctx = {"eng": eng, "title_districts": {l.get("district") for l in t_locs if l.get("district") and l.get("level") != "highway"},
                "named": named_districts(full_text, tl), "body_read": bool(body), "date_ok": bool(art.get("published")),
                "critical": bool(c.get("planned") or BLOCKAGE.search(full_text))}
-        if llm and ai_budget > 0 and (not locs or any(verify.grade(verify.run_checks(l, ctx), ctx["critical"])[0] != "high" for l in locs)):
+        bld_hint = bool(BUILDING_RE.search(full_text)) and not any(l.get("level") == "landmark" and l.get("source_kind") != "curated" for l in locs)
+        if llm and ai_budget > 0 and (not locs or bld_hint or any(verify.grade(verify.run_checks(l, ctx), ctx["critical"])[0] != "high" for l in locs)):
             ai_budget -= 1                                                    # step 3: AI second reader, only for stories the rules are unsure about
             stats["ai_asked"] += 1
             ans = llm(it["title"], (it["summary"] + " " + body).strip())
@@ -1118,6 +1160,17 @@ def build_rows(items, geocoder, max_age_days, expiry_days, now=None, translator=
                 log(f"   AI reader: outside Bangladesh, skipped: {it['title'][:90]}")
                 continue
             ai = _ai_loc(ans, geocoder) if ans and not ans.get("abroad") else None
+            bld = None
+            if ans and not ans.get("abroad") and ans.get("building"):
+                bld = _ai_building(ans, (locs[0].get("district") if locs else None), geocoder, eng)
+                if bld and locs and not any(_km(l["lat"], l["lng"], bld["lat"], bld["lng"]) <= 25 for l in locs if l.get("level") != "highway"):
+                    bld = None                                            # the building is nowhere near what the rules found: do not trust either
+                    ctx["llm"] = {"agree": False, "where": ans["building"]["name"]}
+            if bld:
+                stats["buildings"] = stats.get("buildings", 0) + 1
+                keep_locs = [l for l in locs if l.get("level") not in COARSE_LEVELS]
+                locs = keep_locs + [bld] if keep_locs else [bld]
+                ai = None
             if ans and ans.get("abroad"):
                 ctx["llm"] = {"agree": False, "where": "outside Bangladesh"}
             elif ai and not locs:
@@ -1156,7 +1209,7 @@ def build_rows(items, geocoder, max_age_days, expiry_days, now=None, translator=
                 "source": "news", "source_url": it["link"] + ("#" + slug if many else ""),
                 "place_text": loc["place_text"][:120],
                 "status": "pending" if verdict == "show" else "held", "happened_on": happened,
-                "_outlet": it.get("outlet"), "also_in": None,
+                "_outlet": it.get("outlet"), "also_in": None, "route": (rt["route"] if (rt := routes.match(loc["lat"], loc["lng"]))["route"] else None),
                 "confidence": conf, "evidence": (loc.get("ev") or "")[:300], "checks": verify.summary(checks)[:900], "body_read": bool(body),
                 "expires_at": (now + dt.timedelta(days=expiry_days)).isoformat(),
             })

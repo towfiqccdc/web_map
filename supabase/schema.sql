@@ -88,3 +88,6 @@ create policy "admin deletes" on public.risk_areas
 
 -- 4) MAKE YOURSELF AN ADMIN  (change the email, then run this line too)
 -- insert into public.admins (email) values ('your-email@example.com') on conflict do nothing;
+
+alter table public.risk_areas add column if not exists also_in text;
+alter table public.risk_areas add column if not exists route text;

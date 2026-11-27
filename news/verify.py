@@ -85,6 +85,8 @@ def run_checks(loc, ctx):
     if loc.get("corridor") and loc.get("corridor_km") is not None and loc["corridor_km"] > 35:
         out.append(("fail", f"pin is {loc['corridor_km']:.0f} km from {loc['corridor']}"))
 
+    if loc.get("bld"):                                                      # a building named in the story and pinned on the building itself
+        out.append(("warn" if loc["bld"] in ("ai", "apart") else "pass", loc.get("bld_note") or "building pinned"))
     # 6b. AI second reader (only present for stories the rules were unsure about)
     ai = ctx.get("llm")
     if loc.get("ai_only"):

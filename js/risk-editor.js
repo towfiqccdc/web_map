@@ -366,8 +366,8 @@
   function catName(k) { for (var i = 0; i < CATS.length; i++) if (CATS[i][0] === k) return CATS[i][1]; return 'Other'; }
   function catOk(r) { return cat === 'all' || catsOf(r).indexOf(cat) > -1; }
   function flagged(r) { return (r.confidence && r.confidence !== 'high') || /check/i.test(r.place_text || ''); }
-  var flagOnly = false;
-  function itemOk(r) { return cityOk(r) && catOk(r) && (!flagOnly || flagged(r)); }
+  var flagOnly = false, routeOnly = false;
+  function itemOk(r) { return cityOk(r) && catOk(r) && (!flagOnly || flagged(r)) && (!routeOnly || !!r.route); }
   function tabRows() { return rows.filter(function (r) { return tab === 'pending' ? (r.status === 'pending' && isFresh(r)) : tab === 'held' ? (r.status === 'held' && isFresh(r)) : r.status === 'approved'; }); }
   function renderCities() {
     var box = $('apCities');
@@ -477,11 +477,16 @@
       $('apNewBtn').onclick = newManual;
       return;
     }
-    var items = tabRows().filter(itemOk);
+    var items = tabRows().filter(itemOk).sort(function (a, b) { return (b.route ? 1 : 0) - (a.route ? 1 : 0); });      // incidents on our routes first
+    var nRoute = tabRows().filter(function (r) { return cityOk(r) && catOk(r) && r.route; }).length;
     var nFlag = tabRows().filter(function (r) { return cityOk(r) && catOk(r) && flagged(r); }).length;      // counts follow the city and type tabs
     var scope = (city !== 'all' ? ' in ' + city : '') + (cat !== 'all' ? ' (' + catName(cat) + ')' : '');
     var bar = (tab === 'pending' || tab === 'held') && (nFlag || flagOnly) ? '<button type="button" id="apFlagBtn" class="ap-flagbtn' + (flagOnly ? ' on' : '') + '">⚠ ' + (flagOnly ? 'Showing only items to check' + scope + ' — show all' : nFlag + ' item(s)' + scope + ' need a manual check — show only these') + '</button>' : '';
-    function bindFlag() { var fb = $('apFlagBtn'); if (fb) fb.onclick = function () { flagOnly = !flagOnly; renderList(); drawPending(); }; }
+    if (tab === 'pending' || tab === 'held' || tab === 'active') bar += '<button type="button" id="apRouteBtn" class="ap-flagbtn route' + (routeOnly ? ' on' : '') + '">🚚 ' + (routeOnly ? 'Showing only our routes — show all' : nRoute + ' item(s) on our routes (Dhaka–Brahmanbaria, Sylhet, Cumilla) — show only these') + '</button>';
+    function bindFlag() {
+      var fb = $('apFlagBtn'); if (fb) fb.onclick = function () { flagOnly = !flagOnly; renderList(); drawPending(); };
+      var rb = $('apRouteBtn'); if (rb) rb.onclick = function () { routeOnly = !routeOnly; renderList(); drawPending(); };
+    }
     if (!items.length) { box.innerHTML = bar + '<div class="ap-empty">' + (tab === 'pending' ? 'Nothing waiting for approval.' : tab === 'held' ? 'Nothing held back.' : 'No active risk areas.') + '</div>'; bindFlag(); return; }
     box.innerHTML = bar + items.map(function (r) {
       var src = safeUrl(r.source_url);
@@ -490,6 +495,7 @@
         catsOf(r).slice(0, 3).map(function (k) { return '<span class="pill cat">' + esc(catName(k)) + '</span>'; }).join('') +
         (isEnded(r) ? '<span class="pill ended" title="Past its end date: no longer counted in route checks">ended</span>' : '') +
         (r.confidence ? '<span class="pill conf-' + esc(r.confidence) + '" title="How many independent checks agreed on this place">' + (r.confidence === 'high' ? '✓ verified' : r.confidence === 'medium' ? '◐ partly verified' : '✗ not verified') + '</span>' : '') +
+        (r.route ? '<span class="pill route" title="Within 5 km of ' + esc(r.route) + '">🚚 ' + esc(r.route) + '</span>' : '') +
         (flagged(r) ? '<span class="pill warn" title="The exact spot is not certain. Check it on the map, or type the coordinates, before approving.">⚠ check spot</span>' : '') +
         (tab === 'active' ? '<button type="button" class="ap-del" data-del="' + esc(r.id) + '" title="Delete this approved item">🗑</button>' : '') +
         '<div class="ap-titlerow"><b>' + esc(r.title) + '</b>' +
