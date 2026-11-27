@@ -125,3 +125,11 @@ A failed check, or three warnings, sends the story to the **Held** tab: it is no
 - Page footers, addresses and phone numbers are removed from the article text before reading it.
 - Foreign newspapers and well-known foreign places are dropped; a small place with no district anywhere in the story is held back.
 - A highway-only headline never contradicts the article: the article's own place decides.
+
+### One incident, one pin
+- The same event reported by several newspapers (same kind of incident, within a day, within ~1.5 km and reading alike) is merged into one pin: the best-verified, most precise report keeps it, and the others are listed under **Also reported by** (admin list and map popup). Events already on the map from earlier hours are merged the same way.
+- Pins that still share a spot are grouped in the admin map under a dark numbered badge; tap it to spread them out.
+- Google's summary ends with the newspaper's name ("Dhaka Tribune"); it is removed so an outlet name is never read as a place.
+- Pages that block the plain request are retried with a browser identity and, where the site has one, the AMP page.
+- "Son of X of Y village under Z union" marks the victim's home, not the incident place.
+- A story that only names a whole district is held: a district centre (for Dhaka it is Baridhara) would be a misleading spot. Set it yourself in the Held tab with the coordinates box.

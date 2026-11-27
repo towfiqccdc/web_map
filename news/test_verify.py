@@ -2,7 +2,7 @@
 import datetime as dt
 import unittest
 
-from news import article, fetch_news as fn, verify
+from news import article, dedupe, fetch_news as fn, verify
 
 NOW = dt.datetime(2026, 11, 25, 6, 0, tzinfo=dt.timezone.utc)
 D = dt.timezone.utc
@@ -143,6 +143,64 @@ class Pipeline(unittest.TestCase):
         t = article.body_text(page)
         self.assertIn("Khilgaon", t)
         self.assertNotIn("Karwan", t)
+
+    # ---- newspaper name, victim's home village, duplicates ------------------------------------
+    def test_outlet_name_in_google_summary_is_not_a_place(self):
+        xml = (b'<rss><channel><item><title>Awami League man dies while making crude bombs - Dhaka Tribune</title><link>https://news.google.com/rss/articles/zz</link>'
+               b'<description>&lt;a href="x"&gt;Awami League man dies while making crude bombs&lt;/a&gt;&amp;nbsp;&amp;nbsp;&lt;font&gt;Dhaka Tribune&lt;/font&gt;</description>'
+               b'<source url="https://www.dhakatribune.com">Dhaka Tribune</source></item></channel></rss>')
+        item = fn.parse_feed(xml)[0]
+        self.assertEqual((item["summary"], item["outlet"]), ("", "Dhaka Tribune"))
+        rows, _ = fn.build_rows([{**item, "published": NOW}], geo(), 4, 30, now=NOW)
+        self.assertFalse([r for r in rows if r["status"] == "pending"], rows)       # no place known: nothing is pinned (and never Dhaka)
+
+    def test_victims_home_village_is_not_the_incident_place(self):
+        body = ("An activist of the banned Awami League died when a homemade bomb exploded in Shibganj upazila of Chapainawabganj on Wednesday. "
+                "The blast happened near a field in the Chowka area of Monakasha union. The dead man, Md Thomas Uddin, 35, was the son of Mortuza Ali "
+                "of Bishwanathpur village under Binodpur union. The officer-in-charge of Shibganj Police Station said a case would be filed.")
+        places, rows, _ = self._places("Awami League man dies while making crude bombs - Dhaka Tribune", body)
+        self.assertTrue(places and all("Chapainawabganj" in p for p in places), places)
+        self.assertFalse(any("Binodpur" in p for p in places), places)
+
+    def test_whole_district_is_held_not_pinned_at_the_district_centre(self):
+        rows, st = run("Two killed in road accident in Dhaka", "", art_date=None)
+        self.assertEqual([r["status"] for r in rows], ["held"] if rows else [])
+
+    def test_same_event_from_two_newspapers_is_one_pin(self):
+        a = {"title": "Crude bomb explodes behind Khilgaon police station, one held - Daily Star", "type": "violence", "lat": 23.748, "lng": 90.429,
+             "happened_on": "2026-11-24", "source_url": "https://n/a", "confidence": "high", "body_read": True, "radius_m": 800, "_outlet": "Daily Star"}
+        b = {**a, "title": "Cocktail blast behind Khilgaon police station; man held - Dhaka Post", "lat": 23.7482, "lng": 90.4292, "source_url": "https://n/b",
+             "confidence": "medium", "body_read": False, "radius_m": 1500, "_outlet": "Dhaka Post"}
+        other = {**a, "title": "Bus torched in Mirpur", "lat": 23.80, "lng": 90.36, "source_url": "https://n/c"}
+        rows, _ = dedupe.merge([b, a, other])
+        self.assertEqual(sorted(r["source_url"] for r in rows), ["https://n/a", "https://n/c"])
+        self.assertIn("Dhaka Post|https://n/b", [r for r in rows if r["source_url"] == "https://n/a"][0]["also_in"])
+
+    def test_event_already_on_the_map_gets_an_also_reported_by_line(self):
+        old = {"id": "p1", "type": "violence", "lat": 23.748, "lng": 90.429, "happened_on": "2026-11-24", "title": "Khilgaon: Crude bomb explodes behind police station",
+               "also_in": None, "source_url": "https://n/a"}
+        new = {"title": "Crude bomb explodes behind Khilgaon police station - Dhaka Post", "type": "violence", "lat": 23.7481, "lng": 90.4291,
+               "happened_on": "2026-11-25", "source_url": "https://n/b", "radius_m": 800, "_outlet": "Dhaka Post"}
+        rows, patches = dedupe.merge([new], [old])
+        self.assertEqual((rows, patches), ([], [("p1", "Dhaka Post|https://n/b")]))
+
+    def test_unreadable_page_falls_back_to_other_agent_and_amp(self):
+        calls = []
+
+        def fetch(url, headers=None, **k):
+            calls.append((url, bool(headers)))
+            if "news.google.com" in url:
+                return b'<c-wiz><div data-n-a-sg="S" data-n-a-ts="1"></div></c-wiz>'
+            if "/amp/" in url and headers:
+                return b'<article><p>A bomb exploded near a field in Monakasha union of Shibganj upazila in Chapainawabganj on Wednesday afternoon.</p></article>'
+            raise OSError("403")
+        real = article.resolve
+        article.resolve = lambda link, f=None: "https://www.dhakatribune.com/bangladesh/crime/425763/x"
+        try:
+            got = article.read("https://news.google.com/rss/articles/abc", fetch=fetch)
+        finally:
+            article.resolve = real
+        self.assertIn("Monakasha", got["text"])
 
     def test_held_rows_carry_status_and_reason(self):
         rows, st = run("Bus set on fire", "A bus was torched on Tuesday night. Police are investigating the case in detail.",

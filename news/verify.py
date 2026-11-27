@@ -76,6 +76,8 @@ def run_checks(loc, ctx):
     lvl = loc.get("level")
     if lvl in ("area", "union", "landmark", "upazila"):
         out.append(("pass", f"precise place ({lvl})"))
+    elif lvl in ("district", "city") and not ctx.get("critical"):
+        out.append(("fail", "only the whole district is known: too vague to put on the map"))     # a district centre is a misleading spot (e.g. Dhaka -> Baridhara)
     else:
         out.append(("warn", "whole district or highway only"))
 
