@@ -267,6 +267,21 @@ class Pipeline(unittest.TestCase):
         if calls:
             self.assertTrue(all("coordinate estimate" in r["checks"] for r in rows), rows)
 
+    def test_retired_model_falls_back_to_the_next(self):
+        import json, urllib.error
+        llm_mod._RETIRED.clear()
+        seen = []
+
+        def post(url, req, key, timeout):
+            seen.append(url.split("models/")[1].split(":")[0])
+            if len(seen) == 1:
+                raise urllib.error.HTTPError(url, 404, "gone", {}, __import__("io").BytesIO(b'{"error":{"message":"model retired"}}'))
+            return {"candidates": [{"content": {"parts": [{"text": json.dumps({"abroad": False, "district": "Gazipur", "evidence": "in Gazipur on Sunday"})}]}}]}
+        got = llm_mod.ask("Workers block road", "Workers blocked the road in Gazipur on Sunday.", "k", post=post)
+        self.assertEqual(got["district"], "Gazipur")
+        self.assertEqual(len(seen), 2)
+        llm_mod._RETIRED.clear()
+
     def test_held_rows_carry_status_and_reason(self):
         rows, st = run("Bus set on fire", "A bus was torched on Tuesday night. Police are investigating the case in detail.",
                        art_date=NOW - dt.timedelta(days=1))

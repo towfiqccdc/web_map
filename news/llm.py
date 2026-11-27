@@ -10,7 +10,8 @@ import urllib.error
 import urllib.request
 
 ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-DEFAULT_MODEL = "gemini-2.5-flash"
+DEFAULT_MODEL = "gemini-3.8-flash"
+FALLBACK_MODELS = ("gemini-3.5-flash", "gemini-3.1-flash-lite")      # tried in turn if Google has retired the one before
 MAX_TEXT = 2200
 
 PROMPT = """You read Bangladeshi news. Say WHERE IN BANGLADESH the incident in this story happened. Use only the text.
@@ -49,7 +50,21 @@ def _norm(s):
     return re.sub(r"\W+", " ", (s or "").lower()).strip()
 
 
+_RETIRED = set()
+
+
 def ask(title, text, key, model=DEFAULT_MODEL, post=_post, timeout=30):
+    """Tries the model, then the fallbacks if Google answers "model not found" (404)."""
+    tried = [m for m in (model,) + FALLBACK_MODELS if m not in _RETIRED]
+    for m in tried:
+        got = _ask_one(title, text, key, m, post, timeout)
+        if got != "retired":
+            return got
+        _RETIRED.add(m)
+    return None
+
+
+def _ask_one(title, text, key, model, post, timeout):
     """Dict with district / upazila_or_thana / union_or_area / road_or_landmark / evidence / abroad, or None."""
     if not key:
         return None
@@ -65,7 +80,7 @@ def ask(title, text, key, model=DEFAULT_MODEL, post=_post, timeout=30):
         _count(f"http_{e.code}", detail)
         if e.code == 429:
             raise RateLimited(str(e.code))
-        return None
+        return "retired" if e.code == 404 else None
     except Exception as e:
         _count("network_error", repr(e))
         return None
