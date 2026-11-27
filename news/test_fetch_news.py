@@ -336,8 +336,9 @@ class Tests(unittest.TestCase):
             os.remove(feeds)
         self.assertEqual(code, 0)                           # one feed died, the run still succeeds
         self.assertTrue(any("status=in.(pending,rejected,held)" in x[0] for x in sent))     # old waiting news cleaned up first
-        posts = [x for x in sent if "on_conflict" in x[0]]
+        posts = [x for x in sent if "on_conflict=source_url" in x[0]]
         self.assertEqual(len(posts), 1)
+        self.assertEqual(len([x for x in sent if "news_runs" in x[0]]), 1)        # the run was logged in the history table
         path, body, extra = posts[0]
         self.assertIn("on_conflict=source_url", path)
         self.assertIn("ignore-duplicates", extra["Prefer"])
