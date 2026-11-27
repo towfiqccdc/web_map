@@ -7,7 +7,7 @@
   'use strict';
 
   var CACHE_KEY = 'risk_areas_cache_v1';
-  var COLUMNS = 'id,title,type,severity,lat,lng,radius_m,source,source_url,place_text,happened_on,created_at,expires_at,also_in';
+  var COLUMNS = 'id,title,type,severity,lat,lng,radius_m,source,source_url,place_text,happened_on,created_at,expires_at,also_in,route';
 
   function readCache() {
     try {

@@ -238,6 +238,40 @@ class Pipeline(unittest.TestCase):
         self.assertEqual(st["ai_disagree"], 1)
         self.assertTrue(all("AI second reading says" in r["checks"] and r["confidence"] != "high" for r in rows), rows)
 
+    def test_ai_building_is_pinned_on_the_building(self):
+        from news import places
+        ans = {"district": "Chattogram", "upazila_or_thana": None, "evidence": "CMM Court premises in Chattogram",
+               "building": {"name": "CMM Court", "kind": "court", "lat": 22.3396, "lng": 91.8328}}
+        b = fn._ai_building(ans, None, geo({"cmm court": (22.3394, 91.8330)}), places.engine())
+        self.assertEqual((b["level"], b["radius_m"], b["bld"]), ("landmark", 300, "agree"))
+        self.assertIn("CMM Court (court)", b["place_text"])
+        self.assertLess(fn._km(b["lat"], b["lng"], 22.3394, 91.8330), 0.1)
+        self.assertEqual(verify.run_checks(b, {"eng": places.engine(), "named": ["Chattogram"], "title_districts": set()})[-3][0] in ("pass", "warn", "info"), True)
+
+    def test_ai_building_only_ai_estimate_is_flagged(self):
+        from news import places
+        ans = {"district": "Chattogram", "evidence": "x", "building": {"name": "CMM Court", "kind": "court", "lat": 22.3396, "lng": 91.8328}}
+        b = fn._ai_building(ans, None, geo({}), places.engine())
+        self.assertEqual(b["bld"], "ai")
+        self.assertTrue(any(c[0] == "warn" and "AI's estimate only" in c[1] for c in verify.run_checks(b, {"eng": places.engine(), "named": ["Chattogram"]})))
+
+    def test_ai_building_outside_its_district_is_ignored(self):
+        from news import places
+        ans = {"district": "Chattogram", "evidence": "x", "building": {"name": "CMM Court", "kind": "court", "lat": 23.8, "lng": 90.4}}
+        self.assertIsNone(fn._ai_building(ans, None, geo({"cmm court": (23.81, 90.41)}), places.engine()))
+
+    def test_building_not_in_story_is_dropped(self):
+        ans = {"abroad": False, "district": "Dhaka", "building": {"name": "Mirpur Stadium", "kind": "stadium"}, "evidence": "in Dhaka on Tuesday"}
+        got = llm_mod.ask("Bus torched", "A bus was torched in Dhaka on Tuesday night.", "k",
+                          post=lambda *a: {"candidates": [{"content": {"parts": [{"text": __import__("json").dumps(ans)}]}}]})
+        self.assertIsNone(got["building"])
+
+    def test_route_tagging_and_priority(self):
+        from news import routes
+        self.assertEqual(routes.match(24.0522, 90.9764)["route"], "Dhaka–Narsingdi–Bhairab–Brahmanbaria")
+        self.assertIsNone(routes.match(24.37, 88.60)["route"])
+        self.assertGreater(routes.priority("Highway blocked in Bhairab, Brahmanbaria"), routes.priority("Rajshahi shop robbed"))
+
     def test_ai_failure_or_no_key_changes_nothing(self):
         self.assertIsNone(llm_mod.ask("t", "x", None))
         def boom(*a):

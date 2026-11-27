@@ -255,3 +255,7 @@
 .pin-dot{width:18px;height:18px;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.5)}
 .pin-stack{width:30px;height:30px;border-radius:50%;background:#7a2e0e;color:#fff;border:3px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px}
 .ap-also,.pop-also{font-size:11px;color:#475467;margin:3px 0}.ap-also a,.pop-also a{color:#175cd3;font-weight:600}
+
+.pill.route{background:#e0f2fe;color:#075985;border:1px solid #7dd3fc}
+.ap-flagbtn.route{background:#e0f2fe;color:#075985;border-color:#7dd3fc}
+.ap-flagbtn.route.on{background:#075985;color:#fff}

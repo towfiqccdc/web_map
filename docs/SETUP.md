@@ -143,3 +143,16 @@ Add a repository secret `GEMINI_API_KEY` (free key from aistudio.google.com). Th
 - The run log now ends with `AI reader (Gemini) answers: {...}` and up to 3 error messages (bad key, wrong model name, free limit, unreadable answer, quote not in story), so you can see whether Gemini responded.
 - Gemini is also asked for approximate coordinates. They are never used for the pin; they are only compared with the pin (more than 15 km apart -> flagged).
 - A police station named only as the agency handling the case ("Khilgaon Police Station seeks assistance…", "OC of Shibganj Police Station said") is not the incident place.
+
+## Buildings and company routes
+
+- **Buildings.** The AI reader is also asked whether the incident happened at a named building or institution (court, stadium, hospital,
+  school, market, bank, station…). The building must be named in the story. It is pinned with a 300 m circle on the building itself:
+  position from an OpenStreetMap search for "<building>, <area>, <district>", checked to lie inside the district and compared with
+  the AI's own coordinate estimate. If the map search finds nothing, the AI's estimate is used but the pin is flagged ⚠.
+  The AI is asked for any story that mentions a building word (court, stadium, hospital, …) unless the rules already pinned the building.
+- **Routes.** `news/routes.py` lists the routes the vehicles use (Dhaka–Narsingdi–Bhairab–Brahmanbaria incl. Ashulia, Dhaka–Sylhet,
+  Dhaka–Cumilla–Chattogram, Dhaka–Gazipur–Mymensingh, Chattogram–Brahmanbaria–Sylhet). A pin within 5 km of a route gets the `route`
+  tag (🚚 badge in the popup, "on our routes" filter in the admin panel, listed first). Stories that mention route places are read
+  and AI-checked first, and `feeds.txt` has extra English and Bangla searches for these corridors. `LLM_MAX_PER_RUN` defaults to 40.
+- Database: `alter table risk_areas add column if not exists route text;`
