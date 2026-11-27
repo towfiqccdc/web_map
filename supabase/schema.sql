@@ -91,3 +91,7 @@ create policy "admin deletes" on public.risk_areas
 
 alter table public.risk_areas add column if not exists also_in text;
 alter table public.risk_areas add column if not exists route text;
+
+-- Run history: one row per news job run (see news/fetch_news.py write_run_history)
+alter table public.risk_areas add column if not exists run_key text;
+-- table news_runs: created by migration "news_runs_history" (columns: run_key, started_at, duration_s, feeds_ok, stories_seen, ai_asked, new_rows, new_on_route, conf_*, stats jsonb ...)

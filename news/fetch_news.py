@@ -1304,6 +1304,28 @@ def audit_pending(request):
     return len(bad)
 
 
+def write_run_history(run_key, started, stats, rows, ok, failed, merged, removed_old, audited, request=None):
+    """One row per run in news_runs, so performance can be analysed later. Never stops the job."""
+    request = request or supabase_request
+    now = dt.datetime.now(dt.timezone.utc)
+    conf = lambda c: sum(1 for r in rows if r.get("confidence") == c)
+    rec = {"run_key": run_key, "started_at": started.isoformat(), "finished_at": now.isoformat(), "duration_s": int((now - started).total_seconds()),
+           "trigger": os.environ.get("GITHUB_EVENT_NAME") or "local", "feeds_ok": ok, "feeds_failed": len(failed), "failed_feeds": [u[:200] for u in failed],
+           "stories_seen": stats.get("seen"), "too_old": stats.get("too_old"), "not_incident": stats.get("not_incident"), "no_place": stats.get("no_place"),
+           "duplicate": stats.get("duplicate"), "articles_read": stats.get("articles_read"),
+           "ai_model": os.environ.get("GEMINI_MODEL") or llm_mod.DEFAULT_MODEL if os.environ.get("GEMINI_API_KEY") else None,
+           "ai_asked": stats.get("ai_asked"), "ai_rescued": stats.get("ai_rescued"), "ai_disagree": stats.get("ai_disagree"), "ai_buildings": stats.get("buildings", 0),
+           "ai_outcomes": dict(llm_mod.STATS), "new_rows": len(rows), "new_pending": sum(1 for r in rows if r.get("status") == "pending"),
+           "new_held": sum(1 for r in rows if r.get("status") == "held"), "new_on_route": sum(1 for r in rows if r.get("route")),
+           "conf_high": conf("high"), "conf_medium": conf("medium"), "conf_low": conf("low"), "merged_into_existing": merged,
+           "housekeeping_deleted": removed_old, "housekeeping_redone": audited, "unmapped_titles": [t[:200] for t in UNMAPPED[:50]], "stats": stats}
+    try:
+        request("POST", "/rest/v1/news_runs?on_conflict=run_key", rec, {"Prefer": "resolution=merge-duplicates,return=minimal"})
+        log(f"Run history saved (run {run_key}).")
+    except Exception as e:
+        log(f"Run history not saved ({type(e).__name__}: {e}).")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--dry-run", action="store_true", help="show what would be added; do not touch the database")
@@ -1317,6 +1339,9 @@ def main(argv=None):
         log("ERROR: set SUPABASE_URL and SUPABASE_SERVICE_KEY (or use --dry-run).")
         return 2
 
+    started = dt.datetime.now(dt.timezone.utc)
+    run_key = os.environ.get("GITHUB_RUN_ID") or started.strftime("local-%Y%m%d%H%M%S")
+    merged = 0
     items, ok, failed = [], 0, []
     for url in read_feed_urls(args.feeds):
         try:
@@ -1390,15 +1415,20 @@ def main(argv=None):
             rows, patches = dedupe.merge(rows, old)
             for pid, txt in patches:
                 supabase_request("PATCH", f"/rest/v1/risk_areas?id=eq.{pid}", {"also_in": txt}, {"Prefer": "return=minimal"})
+            merged = before - len(rows)
             if before != len(rows):
                 log(f"Merged {before - len(rows)} repeat report(s) of events already on the map.")
         except Exception as e:
             log(f"Duplicate merge skipped ({e}).")
         rows = [{k: v for k, v in r.items() if not k.startswith("_")} for r in rows]
+        for r in rows:
+            r["run_key"] = run_key                                        # which run created this pin (for later analysis)
         if rows:
             supabase_request("POST", "/rest/v1/risk_areas?on_conflict=source_url", rows,
                              {"Prefer": "resolution=ignore-duplicates,return=minimal"})
     log(f"Added {len(rows)} new PENDING risk area(s). Review them on the map (Admin button).")
+    if not args.dry_run:
+        write_run_history(run_key, started, stats, rows, ok, failed, merged, removed_old, audited)
 
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:
