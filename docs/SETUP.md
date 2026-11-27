@@ -133,3 +133,9 @@ A failed check, or three warnings, sends the story to the **Held** tab: it is no
 - Pages that block the plain request are retried with a browser identity and, where the site has one, the AMP page.
 - "Son of X of Y village under Z union" marks the victim's home, not the incident place.
 - A story that only names a whole district is held: a district centre (for Dhaka it is Baridhara) would be a misleading spot. Set it yourself in the Held tab with the coordinates box.
+
+### AI second reader (optional, free)
+Add a repository secret `GEMINI_API_KEY` (free key from aistudio.google.com). The job then asks Google Gemini (default model `gemini-2.5-flash`, change with the secret/env `GEMINI_MODEL`) about **only the stories the rules are unsure about** (not fully verified, or no place found), at most `LLM_MAX_PER_RUN` (default 20) per hour.
+- Gemini never gives coordinates. It names the district / upazila / area and quotes the words of the story that say so. The answer is ignored unless the quoted words really are in the story.
+- The answer goes through the same official place list as the rules. If both agree the pin keeps its checks; if they disagree the pin is flagged ⚠ with "AI second reading says …"; if the rules found nothing but the AI did, the pin is shown flagged ("found by the AI reader only").
+- No key, a network error or the free limit being reached simply means the rules are used alone. On the free plan Google may use the text sent (public news only) to improve its products.

@@ -2,7 +2,7 @@
 import datetime as dt
 import unittest
 
-from news import article, dedupe, fetch_news as fn, verify
+from news import article, dedupe, fetch_news as fn, llm as llm_mod, verify
 
 NOW = dt.datetime(2026, 11, 25, 6, 0, tzinfo=dt.timezone.utc)
 D = dt.timezone.utc
@@ -201,6 +201,53 @@ class Pipeline(unittest.TestCase):
         finally:
             article.resolve = real
         self.assertIn("Monakasha", got["text"])
+
+    # ---- optional AI second reader (always faked here: no network) ------------------------------
+    def _run_ai(self, title, body, answer, points=None):
+        calls = []
+
+        def post(url, req, key, timeout):
+            calls.append(1)
+            import json
+            return {"candidates": [{"content": {"parts": [{"text": json.dumps(answer)}]}}]}
+        reader = lambda link: {"text": body, "published": NOW - dt.timedelta(days=1)}
+        llm = lambda t, x: llm_mod.ask(t, x, "k", post=post)
+        items = [{"title": title, "link": "https://news.google.com/rss/articles/ai1", "summary": "", "published": NOW}]
+        rows, st = fn.build_rows(items, geo(points), 4, 30, now=NOW, reader=reader, llm=llm)
+        return rows, st, calls
+
+    def test_ai_rescues_a_story_the_rules_cannot_place(self):
+        body = "Unidentified miscreants hurled crude bombs at a party office in Kachua upazila late on Tuesday night, leaving two people injured, locals said."
+        ans = {"abroad": False, "district": "Chandpur", "upazila_or_thana": "Kachua", "union_or_area": None, "road_or_landmark": None,
+               "evidence": "office in Kachua upazila", "confidence": "high"}
+        rows, st, calls = self._run_ai("Crude bombs hurled at party office, two hurt", body, ans)
+        self.assertEqual((len(calls), st["ai_rescued"]), (1, 1))
+        self.assertTrue(rows and "Chandpur" in rows[0]["place_text"], rows)
+
+    def test_ai_answer_with_invented_evidence_is_ignored(self):
+        ans = {"abroad": False, "district": "Khulna", "upazila_or_thana": None, "union_or_area": None, "road_or_landmark": None,
+               "evidence": "in the heart of Khulna city", "confidence": "high"}
+        self.assertIsNone(llm_mod.ask("Bus torched", "A bus was torched on Tuesday night.", "k",
+                                      post=lambda *a: {"candidates": [{"content": {"parts": [{"text": __import__("json").dumps(ans)}]}}]}))
+
+    def test_ai_disagreement_is_flagged_not_hidden(self):
+        body = "Workers blocked the highway in Gazipur on Sunday and clashed with police, who fired tear gas near the factory gate."
+        ans = {"abroad": False, "district": "Narayanganj", "upazila_or_thana": None, "union_or_area": None, "road_or_landmark": None,
+               "evidence": "in Gazipur on Sunday", "confidence": "medium"}
+        rows, st, calls = self._run_ai("Workers block highway, clash with police", body, ans)
+        self.assertEqual(st["ai_disagree"], 1)
+        self.assertTrue(all("AI second reading says" in r["checks"] and r["confidence"] != "high" for r in rows), rows)
+
+    def test_ai_failure_or_no_key_changes_nothing(self):
+        self.assertIsNone(llm_mod.ask("t", "x", None))
+        def boom(*a):
+            raise OSError("offline")
+        self.assertIsNone(llm_mod.ask("t", "x", "k", post=boom))
+        import urllib.error
+        def limited(*a):
+            raise urllib.error.HTTPError("u", 429, "limit", {}, None)
+        with self.assertRaises(llm_mod.RateLimited):
+            llm_mod.ask("t", "x", "k", post=limited)
 
     def test_held_rows_carry_status_and_reason(self):
         rows, st = run("Bus set on fire", "A bus was torched on Tuesday night. Police are investigating the case in detail.",

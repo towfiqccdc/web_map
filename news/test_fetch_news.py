@@ -73,7 +73,7 @@ class Tests(unittest.TestCase):
         geo = fn.Geocoder(sleep=0, fetch=fake_fetch)
         rows, st = fn.build_rows(fn.parse_feed(RSS.encode()), geo, 2, 30, now=NOW)
         titles = [r["title"] for r in rows]
-        self.assertEqual(st, {"seen": 7, "too_old": 1, "not_incident": 2, "no_place": 1, "duplicate": 1, "kept": 2, "held": 0, "articles_read": 0}, st)
+        self.assertEqual(st, {"seen": 7, "too_old": 1, "not_incident": 2, "no_place": 1, "duplicate": 1, "kept": 2, "held": 0, "articles_read": 0, "ai_asked": 0, "ai_rescued": 0, "ai_disagree": 0}, st)
         crash = [r for r in rows if r["type"] == "accident"][0]
         self.assertEqual((crash["severity"], crash["status"], crash["source"]), (3, "pending", "news"))
         self.assertEqual(crash["lat"], 23.8583)      # Madhabdi comes from the built-in place list

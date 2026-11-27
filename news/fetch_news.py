@@ -32,9 +32,10 @@ import xml.etree.ElementTree as ET
 from email.utils import parsedate_to_datetime
 
 try:                                    # run as `python news/fetch_news.py` or imported as news.fetch_news
-    from . import places as places_mod, story, verify, article, dedupe
+    from . import places as places_mod, story, verify, article, dedupe, llm as llm_mod
 except ImportError:
     import dedupe
+    import llm as llm_mod
     import places as places_mod
     import story
     import verify
@@ -1058,11 +1059,18 @@ def named_districts(text, title_len):
             if m["entries"][0]["level"] == "district" and story.role_of(t, m["pos"], m["end"], title_len) != "origin"]
 
 
-def build_rows(items, geocoder, max_age_days, expiry_days, now=None, translator=None, reader=None, known_urls=()):
+def _ai_loc(ans, geocoder):
+    """The AI reader's answer as a place, resolved through the same official place list as the rules."""
+    locs, _ = analyse_story(llm_mod.as_sentence(ans), "", geocoder)
+    return locs[0] if locs else None
+
+
+def build_rows(items, geocoder, max_age_days, expiry_days, now=None, translator=None, reader=None, known_urls=(), llm=None):
     """Turn feed items into rows ready for the risk_areas table. Returns (rows, stats)."""
     now = now or dt.datetime.now(dt.timezone.utc)
-    stats = {"seen": 0, "too_old": 0, "not_incident": 0, "no_place": 0, "duplicate": 0, "kept": 0, "held": 0, "articles_read": 0}
+    stats = {"seen": 0, "too_old": 0, "not_incident": 0, "no_place": 0, "duplicate": 0, "kept": 0, "held": 0, "articles_read": 0, "ai_asked": 0, "ai_rescued": 0, "ai_disagree": 0}
     eng, read_budget = places_mod.engine(), MAX_ARTICLES_PER_RUN
+    ai_budget = int(os.environ.get("LLM_MAX_PER_RUN", "20"))
     rows, seen_urls, seen_keys = [], set(), set()
     for it in items:
         stats["seen"] += 1
@@ -1093,11 +1101,6 @@ def build_rows(items, geocoder, max_age_days, expiry_days, now=None, translator=
             stats["not_incident"] += 1
             log(f"   outside Bangladesh, skipped: {it['title'][:90]}")
             continue
-        if not locs:
-            stats["no_place"] += 1
-            UNMAPPED.append(it["title"][:120])
-            log(f"   no place found: {it['title'][:90]}")
-            continue
         happened = (it["published"] or now).date().isoformat()
         added = 0
         full_text = f"{clean_title(it['title'])}. {it['summary']} {body}"
@@ -1106,6 +1109,29 @@ def build_rows(items, geocoder, max_age_days, expiry_days, now=None, translator=
         ctx = {"eng": eng, "title_districts": {l.get("district") for l in t_locs if l.get("district") and l.get("level") != "highway"},
                "named": named_districts(full_text, tl), "body_read": bool(body), "date_ok": bool(art.get("published")),
                "critical": bool(c.get("planned") or BLOCKAGE.search(full_text))}
+        if llm and ai_budget > 0 and (not locs or any(verify.grade(verify.run_checks(l, ctx), ctx["critical"])[0] != "high" for l in locs)):
+            ai_budget -= 1                                                    # step 3: AI second reader, only for stories the rules are unsure about
+            stats["ai_asked"] += 1
+            ans = llm(it["title"], (it["summary"] + " " + body).strip())
+            if ans and ans.get("abroad") and not locs:
+                stats["not_incident"] += 1
+                log(f"   AI reader: outside Bangladesh, skipped: {it['title'][:90]}")
+                continue
+            ai = _ai_loc(ans, geocoder) if ans and not ans.get("abroad") else None
+            if ans and ans.get("abroad"):
+                ctx["llm"] = {"agree": False, "where": "outside Bangladesh"}
+            elif ai and not locs:
+                locs = [{**ai, "role": "locative", "ev": ans["evidence"], "evsent": True, "ai_only": True}]
+                stats["ai_rescued"] += 1
+            elif ai:
+                near = any(l.get("district") == ai.get("district") and _km(l["lat"], l["lng"], ai["lat"], ai["lng"]) <= 12 for l in locs)
+                ctx["llm"] = {"agree": near, "where": ai["place_text"].split(" (")[0]}
+                stats["ai_disagree"] += 0 if near else 1
+        if not locs:
+            stats["no_place"] += 1
+            UNMAPPED.append(it["title"][:120])
+            log(f"   no place found: {it['title'][:90]}")
+            continue
         for loc in locs:
             key = (loc["place_text"].lower(), happened, c["type"])      # same story from several outlets
             if key in seen_keys:
@@ -1267,7 +1293,23 @@ def main(argv=None):
     def reader(link):
         time.sleep(0.4)
         return article.read(link)
-    rows, stats = build_rows(items, Geocoder(), max_age, expiry, reader=reader, known_urls=known,
+    llm = None
+    if os.environ.get("GEMINI_API_KEY"):
+        off = []
+
+        def llm(title, text):
+            if off:
+                return None
+            time.sleep(4.5)                                               # stay under the free per-minute limit
+            try:
+                return llm_mod.ask(title, text, os.environ["GEMINI_API_KEY"], os.environ.get("GEMINI_MODEL") or llm_mod.DEFAULT_MODEL)
+            except llm_mod.RateLimited:
+                off.append(1)
+                log("AI reader: free limit reached, using the rules only for the rest of this run.")
+                return None
+    else:
+        log("AI reader off (no GEMINI_API_KEY).")
+    rows, stats = build_rows(items, Geocoder(), max_age, expiry, reader=reader, known_urls=known, llm=llm,
                              translator=Translator(email=os.environ.get("MYMEMORY_EMAIL")))
     log(f"\nFeeds ok: {ok}, failed: {len(failed)}   |   {stats}")
 
