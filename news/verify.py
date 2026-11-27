@@ -85,6 +85,13 @@ def run_checks(loc, ctx):
     if loc.get("corridor") and loc.get("corridor_km") is not None and loc["corridor_km"] > 35:
         out.append(("fail", f"pin is {loc['corridor_km']:.0f} km from {loc['corridor']}"))
 
+    # 6b. AI second reader (only present for stories the rules were unsure about)
+    ai = ctx.get("llm")
+    if loc.get("ai_only"):
+        out.append(("warn", "place found by the AI reader only (the rules found none): check it"))
+    elif ai is not None:
+        out.append(("pass", "AI second reading agrees on the place") if ai["agree"] else ("warn", f"AI second reading says {ai['where']}: check it"))
+
     # 7. Date
     dok = ctx.get("date_ok")
     out.append(("pass", "real publish date read from the article") if dok else ("info", "publish date not verified (feed date used)"))
