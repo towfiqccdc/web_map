@@ -156,3 +156,10 @@ Add a repository secret `GEMINI_API_KEY` (free key from aistudio.google.com). Th
   tag (🚚 badge in the popup, "on our routes" filter in the admin panel, listed first). Stories that mention route places are read
   and AI-checked first, and `feeds.txt` has extra English and Bangla searches for these corridors. `LLM_MAX_PER_RUN` defaults to 40.
 - Database: `alter table risk_areas add column if not exists route text;`
+
+## Run history
+
+Every run of the news job writes one row to the `news_runs` table (feeds ok/failed, stories seen and dropped, articles read, Gemini questions
+and outcomes, new pins by status / confidence / on-route, merged repeats, housekeeping, headlines with no place, all counters as JSON), and
+every new pin carries the `run_key` of the run that created it (`risk_areas.run_key`). Rows are never deleted, so they can be used later for
+performance analysis, e.g. `select date_trunc('day', started_at), sum(new_rows), sum(ai_asked) from news_runs group by 1;`.

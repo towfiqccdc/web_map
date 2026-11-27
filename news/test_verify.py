@@ -279,6 +279,14 @@ class Pipeline(unittest.TestCase):
         fn.build_rows(items, geo(), 4, 30, now=NOW, reader=lambda l: {"text": "", "published": NOW}, known_urls={"https://news.google.com/rss/articles/old1"}, llm=llm)
         self.assertEqual(calls, [])
 
+    def test_run_history_row(self):
+        sent = []
+        rows = [{"status": "pending", "confidence": "high", "route": "R"}, {"status": "held", "confidence": "low", "route": None}]
+        fn.write_run_history("99", NOW, {"seen": 5, "ai_asked": 2}, rows, 30, ["u"], 1, 0, 0, request=lambda m, p, b, h: sent.append((m, p, b)))
+        b = sent[0][2]
+        self.assertEqual((b["run_key"], b["new_rows"], b["new_pending"], b["new_held"], b["new_on_route"], b["feeds_failed"]), ("99", 2, 1, 1, 1, 1))
+        fn.write_run_history("1", NOW, {}, [], 0, [], 0, 0, 0, request=lambda *a: 1 / 0)       # a failure must not raise
+
     def test_ai_failure_or_no_key_changes_nothing(self):
         self.assertIsNone(llm_mod.ask("t", "x", None))
         def boom(*a):
