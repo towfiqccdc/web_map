@@ -282,6 +282,24 @@ class Pipeline(unittest.TestCase):
         self.assertEqual(len(seen), 2)
         llm_mod._RETIRED.clear()
 
+    def test_busy_model_is_retried_on_the_next_model(self):
+        import json, urllib.error
+        llm_mod._RETIRED.clear()
+        old, llm_mod.sleep = llm_mod.sleep, lambda s: None
+        seen = []
+
+        def post(url, req, key, timeout):
+            seen.append(url.split("models/")[1].split(":")[0])
+            if len(seen) < 3:
+                raise urllib.error.HTTPError(url, 503, "busy", {}, __import__("io").BytesIO(b'{"error":{"message":"high demand"}}'))
+            return {"candidates": [{"content": {"parts": [{"text": json.dumps({"abroad": False, "district": "Gazipur", "evidence": "in Gazipur on Sunday"})}]}}]}
+        try:
+            got = llm_mod.ask("Workers block road", "Workers blocked the road in Gazipur on Sunday.", "k", post=post)
+        finally:
+            llm_mod.sleep = old
+        self.assertEqual((got["district"], len(seen)), ("Gazipur", 3))
+        self.assertEqual(len(set(seen)), 3)
+
     def test_held_rows_carry_status_and_reason(self):
         rows, st = run("Bus set on fire", "A bus was torched on Tuesday night. Police are investigating the case in detail.",
                        art_date=NOW - dt.timedelta(days=1))

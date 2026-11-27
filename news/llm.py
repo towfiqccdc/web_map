@@ -10,8 +10,8 @@ import urllib.error
 import urllib.request
 
 ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-DEFAULT_MODEL = "gemini-3.8-flash"
-FALLBACK_MODELS = ("gemini-3.5-flash", "gemini-3.1-flash-lite")      # tried in turn if Google has retired the one before
+DEFAULT_MODEL = "gemini-3.1-flash-lite"       # light model: plenty accurate for "which district?", and the least often busy on the free plan
+FALLBACK_MODELS = ("gemini-3.5-flash", "gemini-3.8-flash")      # tried in turn if one is retired (404) or busy (503)
 MAX_TEXT = 2200
 
 PROMPT = """You read Bangladeshi news. Say WHERE IN BANGLADESH the incident in this story happened. Use only the text.
@@ -51,16 +51,24 @@ def _norm(s):
 
 
 _RETIRED = set()
+sleep = __import__("time").sleep
 
 
 def ask(title, text, key, model=DEFAULT_MODEL, post=_post, timeout=30):
     """Tries the model, then the fallbacks if Google answers "model not found" (404)."""
-    tried = [m for m in (model,) + FALLBACK_MODELS if m not in _RETIRED]
-    for m in tried:
-        got = _ask_one(title, text, key, m, post, timeout)
-        if got != "retired":
-            return got
-        _RETIRED.add(m)
+    for attempt in range(2):                                          # a second round after a short pause if every model was busy
+        busy = False
+        for m in [m for m in (model,) + FALLBACK_MODELS if m not in _RETIRED]:
+            got = _ask_one(title, text, key, m, post, timeout)
+            if got == "retired":
+                _RETIRED.add(m)
+            elif got == "busy":
+                busy = True
+            else:
+                return got
+        if not busy:
+            return None
+        sleep(6)
     return None
 
 
@@ -80,10 +88,10 @@ def _ask_one(title, text, key, model, post, timeout):
         _count(f"http_{e.code}", detail)
         if e.code == 429:
             raise RateLimited(str(e.code))
-        return "retired" if e.code == 404 else None
+        return "retired" if e.code == 404 else "busy" if e.code in (500, 502, 503, 504) else None
     except Exception as e:
         _count("network_error", repr(e))
-        return None
+        return "busy"
     try:
         raw = out["candidates"][0]["content"]["parts"][0]["text"]
         ans = json.loads(raw)
