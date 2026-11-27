@@ -1304,10 +1304,14 @@ def main(argv=None):
             time.sleep(4.5)                                               # stay under the free per-minute limit
             try:
                 return llm_mod.ask(title, text, os.environ["GEMINI_API_KEY"], os.environ.get("GEMINI_MODEL") or llm_mod.DEFAULT_MODEL)
-            except llm_mod.RateLimited:
-                off.append(1)
-                log("AI reader: free limit reached, using the rules only for the rest of this run.")
-                return None
+            except llm_mod.RateLimited:                                    # one per-minute limit: wait and try once more before giving up for this run
+                time.sleep(40)
+                try:
+                    return llm_mod.ask(title, text, os.environ["GEMINI_API_KEY"], os.environ.get("GEMINI_MODEL") or llm_mod.DEFAULT_MODEL)
+                except llm_mod.RateLimited:
+                    off.append(1)
+                    log("AI reader: free limit reached, using the rules only for the rest of this run.")
+                    return None
     else:
         log("AI reader off (no GEMINI_API_KEY).")
     rows, stats = build_rows(items, Geocoder(), max_age, expiry, reader=reader, known_urls=known, llm=llm,
